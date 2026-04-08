@@ -1,0 +1,2 @@
+# Keep shell scripts as LF so Linux shebangs work (avoids sudo ./script "command not found")
+*.sh text eol=lf

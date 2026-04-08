@@ -1,6 +1,7 @@
 const path = require('path');
 const fs = require('fs');
 const puppeteer = require('puppeteer');
+const { puppeteerLaunchOptions } = require('./chromeExecutable');
 const { getOrCreateSettings } = require('./companySettings');
 const { PRICED_QUOTE_VAT_NOTE, PRICED_QUOTE_VAT_NOTE_PREFIX } = require('../constants/quotePricing');
 
@@ -369,23 +370,6 @@ async function renderQuotePdfHtml(quote) {
 </body>
 </html>`;
   return _pdfHtml;
-}
-
-function puppeteerLaunchOptions() {
-  const args = [
-    '--no-sandbox',
-    '--disable-setuid-sandbox',
-    '--disable-dev-shm-usage',
-    '--disable-gpu',
-    '--font-render-hinting=none',
-  ];
-  const opts = {
-    headless: true,
-    args,
-  };
-  const exe = (process.env.PUPPETEER_EXECUTABLE_PATH || '').trim();
-  if (exe) opts.executablePath = exe;
-  return opts;
 }
 
 async function quoteToPdfBuffer(quote) {

@@ -6,7 +6,9 @@
   "scripts": {
     "start": "node app.js",
     "dev": "node --watch app.js",
-    "seed": "node scripts/seed.js"
+    "seed": "node scripts/seed.js",
+    "install-chrome-deps": "bash scripts/install-puppeteer-chrome-deps.sh",
+    "install-chromium": "bash scripts/install-system-chromium.sh"
   },
   "engines": {
     "node": ">=18"
