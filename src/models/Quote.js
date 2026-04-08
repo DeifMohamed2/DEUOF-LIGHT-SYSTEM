@@ -18,6 +18,8 @@ const quoteSchema = new mongoose.Schema(
     customerPhone: { type: String, trim: true, default: '' },
     lines: { type: [quoteLineSchema], default: [] },
     subtotal: { type: Number, default: 0 },
+    vat14Applied: { type: Boolean, default: false },
+    vat14Amount: { type: Number, default: 0 },
     total: { type: Number, default: 0 },
     notes: { type: String, trim: true, default: '' },
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },

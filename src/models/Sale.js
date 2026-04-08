@@ -2,7 +2,8 @@ const mongoose = require('mongoose');
 
 const saleLineSchema = new mongoose.Schema(
   {
-    inventoryItem: { type: mongoose.Schema.Types.ObjectId, ref: 'InventoryItem', required: true },
+    fromStock: { type: Boolean, default: true },
+    inventoryItem: { type: mongoose.Schema.Types.ObjectId, ref: 'InventoryItem', default: null },
     itemCode: { type: String, required: true },
     itemName: { type: String, required: true },
     quantity: { type: Number, required: true, min: 1 },
@@ -14,7 +15,14 @@ const saleLineSchema = new mongoose.Schema(
 
 const saleSchema = new mongoose.Schema(
   {
+    customerName: { type: String, trim: true, default: '' },
+    disbursementNumber: { type: String, default: '', trim: true },
+    customerNumber: { type: String, default: '', trim: true },
+    paymentMethod: { type: String, default: '', trim: true },
     lines: { type: [saleLineSchema], required: true },
+    subtotal: { type: Number, min: 0, default: 0 },
+    vat14Applied: { type: Boolean, default: false },
+    vat14Amount: { type: Number, min: 0, default: 0 },
     total: { type: Number, required: true, min: 0 },
     soldAt: { type: Date, default: Date.now },
     paymentNote: { type: String, default: '' },
@@ -25,5 +33,6 @@ const saleSchema = new mongoose.Schema(
 
 saleSchema.index({ soldAt: -1 });
 saleSchema.index({ createdBy: 1, soldAt: -1 });
+saleSchema.index({ customerName: 1 });
 
 module.exports = mongoose.model('Sale', saleSchema);

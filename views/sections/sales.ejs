@@ -1,20 +1,32 @@
 <% if (mode === 'list') { %>
+<% var qParam = typeof searchQ === 'string' ? searchQ : ''; %>
+<% var qSuffix = qParam ? '&q=' + encodeURIComponent(qParam) : ''; %>
 <div class="page-head page-head--split">
   <div>
     <h1 class="page-title">المبيعات</h1>
-    <p class="muted"><%= isAdmin ? 'كل المبيعات' : 'مبيعاتك المسجلة' %></p>
+    <p class="muted"><%= isAdmin ? 'كل المبيعات' : 'مبيعاتك المسجلة' %> — بحث بإذن الصرف، العميل، الأصناف، الإجمالي…</p>
   </div>
   <a href="/sales/new" class="btn btn--primary">تسجيل مبيعة</a>
 </div>
 
+<div class="toolbar">
+  <form method="get" action="/sales" class="toolbar__form toolbar__form--grow">
+    <input type="search" name="q" class="form__input form__input--search" placeholder="ابحث: إذن صرف، اسم عميل، رقم عميل، صنف، كود، إجمالي…" value="<%= qParam %>" autocomplete="off">
+    <button type="submit" class="btn">بحث</button>
+    <% if (qParam) { %><a class="btn btn--ghost" href="/sales">مسح</a><% } %>
+  </form>
+</div>
+
 <% if (!sales.length) { %>
-  <div class="panel empty">لا توجد مبيعات.</div>
+  <div class="panel empty"><%= qParam ? 'لا توجد مبيعات مطابقة للبحث.' : 'لا توجد مبيعات.' %></div>
 <% } else { %>
 <div class="table-wrap">
 <table class="table">
   <thead>
     <tr>
+      <th>رقم إذن الصرف</th>
       <th>التاريخ</th>
+      <th>العميل</th>
       <th>الإجمالي (ج.م)</th>
       <% if (isAdmin) { %><th>المستخدم</th><% } %>
       <th></th>
@@ -23,7 +35,9 @@
   <tbody>
     <% sales.forEach(function (s) { %>
     <tr>
+      <td><%= s.disbursementNumber && String(s.disbursementNumber).trim() ? s.disbursementNumber : '—' %></td>
       <td><%= new Date(s.soldAt).toLocaleString('ar-EG') %></td>
+      <td><%= s.customerName && String(s.customerName).trim() ? s.customerName : '—' %></td>
       <td><%= Number(s.total).toFixed(2) %> ج.م</td>
       <% if (isAdmin) { %>
       <td><%= s.createdBy && (s.createdBy.fullName || s.createdBy.username) || '—' %></td>
@@ -36,11 +50,11 @@
 </div>
 <div class="pagination">
   <% if (page > 1) { %>
-  <a class="btn btn--sm" href="?page=<%= page - 1 %>">السابق</a>
+  <a class="btn btn--sm" href="?page=<%= page - 1 %><%= qSuffix %>">السابق</a>
   <% } %>
   <span class="muted">صفحة <%= page %> من <%= totalPages %></span>
   <% if (page < totalPages) { %>
-  <a class="btn btn--sm" href="?page=<%= page + 1 %>">التالي</a>
+  <a class="btn btn--sm" href="?page=<%= page + 1 %><%= qSuffix %>">التالي</a>
   <% } %>
 </div>
 <% } %>
@@ -51,7 +65,7 @@
   <a href="/sales" class="link">رجوع</a>
 </div>
 <div class="panel">
-  <p class="muted">ابحث بالكود أو الاسم أو البند، ثم اختر صنفاً من القائمة لإضافته إلى الجدول. يمكنك إضافة أي عدد من الأصناف.</p>
+  <p class="muted">ابحث في المخزن لإضافة صنف يُخصم من الكمية المتاحة، أو استخدم «إضافة سطر يدوي» لبيع صنف غير مسجل في المخزن (بدون خصم مخزون).</p>
   <div class="inventory-picker">
     <div class="inventory-picker__row">
       <input type="search" id="sale-search" class="form__input form__input--search inventory-picker__input" placeholder="ابحث في المخزن (كود أو اسم أو بند)…" autocomplete="off" aria-autocomplete="list" aria-controls="sale-pick-results">
@@ -61,13 +75,44 @@
   </div>
   <form class="form" method="post" action="/sales" id="sale-form">
     <input type="hidden" name="linesJson" id="linesJson">
-    <label class="form__label">ملاحظة دفع (اختياري)</label>
-    <input class="form__input" name="paymentNote">
+
+    <h3 class="form__section-title">بيانات العميل والدفع</h3>
+    <label class="form__label">اسم العميل / الجهة</label>
+    <input class="form__input" name="customerName" required autocomplete="organization">
+
+    <label class="form__label">رقم إذن الصرف</label>
+    <input class="form__input" name="disbursementNumber" required maxlength="200" inputmode="numeric" autocomplete="off" value="<%= typeof suggestedDisbursementNumber !== 'undefined' ? suggestedDisbursementNumber : '1' %>">
+    <p class="muted form__hint">يُقترح تلقائياً كالتالي بعد آخر رقم رقمي مسجّل (مثال: بعد 1201 يظهر 1202). يمكنك التعديل عند الحاجة.</p>
+
+    <label class="form__label">رقم العميل</label>
+    <input class="form__input" name="customerNumber" placeholder="كود أو رقم مرجعي (اختياري)" maxlength="200">
+
+    <label class="form__label" for="sale-payment-method">طريقة الدفع</label>
+    <select class="form__input" id="sale-payment-method" name="paymentMethod" required>
+      <option value="" disabled selected>— اختر طريقة الدفع —</option>
+      <% (salePaymentMethods || []).forEach(function (opt) { %>
+      <option value="<%= opt.value %>"><%= opt.label %></option>
+      <% }) %>
+    </select>
+
+    <label class="form__label">ملاحظة دفع إضافية (اختياري)</label>
+    <input class="form__input" name="paymentNote" maxlength="2000">
+
+    <label class="form__check-row">
+      <input type="checkbox" name="vat14" id="sale-vat14" value="1">
+      <span>أضف ١٤٪ ضريبة قيمة مضافة على إجمالي البنود</span>
+    </label>
+
     <h3 class="form__section-title">بنود المبيعة</h3>
+    <div class="form__stock-tools">
+      <button type="button" class="btn btn--sm" id="sale-add-manual">+ إضافة سطر يدوي</button>
+      <span class="muted form__stock-tools-hint">لصنف غير موجود في المخزن — لن يُخصم من المخزون</span>
+    </div>
     <div class="table-wrap">
     <table class="table table--compact">
       <thead>
         <tr>
+          <th>المصدر</th>
           <th>الكود</th>
           <th>الاسم</th>
           <th>الكمية</th>
@@ -79,7 +124,10 @@
       <tbody id="lines-body"></tbody>
     </table>
     </div>
-    <p class="total-line" id="grand-total" hidden>الإجمالي: <strong>0.00 ج.م</strong></p>
+    <div id="sale-totals-wrap" class="sale-totals-preview sale-totals-preview--rtl" hidden>
+      <p class="total-line sale-totals-preview__vat muted" id="sale-line-vat" hidden>ضريبة القيمة المضافة (١٤٪): <strong id="tv-vat">0.00</strong> ج.م</p>
+      <p class="total-line sale-totals-preview__final"><span id="tv-final-label">الإجمالي</span>: <strong id="tv-final">0.00</strong> ج.م</p>
+    </div>
     <div class="form__actions">
       <button type="submit" class="btn btn--primary">تأكيد المبيعة</button>
     </div>
@@ -91,7 +139,14 @@
   var body = document.getElementById('lines-body');
   var form = document.getElementById('sale-form');
   var hidden = document.getElementById('linesJson');
-  var grand = document.getElementById('grand-total');
+  var totalsWrap = document.getElementById('sale-totals-wrap');
+  var lineVat = document.getElementById('sale-line-vat');
+  var tvVat = document.getElementById('tv-vat');
+  var tvFinal = document.getElementById('tv-final');
+  var tvFinalLabel = document.getElementById('tv-final-label');
+  var vatCb = document.getElementById('sale-vat14');
+  var btnManual = document.getElementById('sale-add-manual');
+  var VAT = 0.14;
   if (!body || !form || !hidden) return;
   function recalc() {
     var sum = 0;
@@ -102,31 +157,73 @@
       var lt = tr.querySelector('[data-f=lineTotal]');
       if (lt) lt.textContent = (q * p).toFixed(2) + ' ج.م';
     });
-    grand.hidden = body.querySelectorAll('tr').length === 0;
-    grand.querySelector('strong').textContent = sum.toFixed(2) + ' ج.م';
+    sum = Math.round(sum * 100) / 100;
+    var hasRows = body.querySelectorAll('tr').length > 0;
+    totalsWrap.hidden = !hasRows;
+    if (!hasRows) return;
+    var vatOn = vatCb && vatCb.checked;
+    if (vatOn) {
+      lineVat.hidden = false;
+      var vatAmt = Math.round(sum * VAT * 100) / 100;
+      tvVat.textContent = vatAmt.toFixed(2);
+      tvFinal.textContent = (Math.round((sum + vatAmt) * 100) / 100).toFixed(2);
+      tvFinalLabel.textContent = 'الإجمالي النهائي';
+    } else {
+      lineVat.hidden = true;
+      tvFinal.textContent = sum.toFixed(2);
+      tvFinalLabel.textContent = 'الإجمالي';
+    }
   }
+  if (vatCb) vatCb.addEventListener('change', recalc);
   function esc(s) {
     return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
   }
-  function addLine(item) {
+  function bindRemove(tr) {
+    tr.querySelector('.rm').onclick = function () { tr.remove(); recalc(); };
+  }
+  function wireInputs(tr) {
+    tr.querySelectorAll('[data-f=quantity], [data-f=unitPrice]').forEach(function (el) {
+      el.addEventListener('input', recalc);
+    });
+  }
+  function addLineFromStock(item) {
     var tr = document.createElement('tr');
+    tr.setAttribute('data-line-source', 'stock');
     tr.innerHTML =
-      '<td><code>' + esc(item.itemCode) + '</code><input type="hidden" data-f="inventoryItem" value="' + esc(item._id) + '"></td>' +
-      '<td>' + esc(item.name) + '</td>' +
+      '<td><span class="sale-line-badge sale-line-badge--stock">مخزن</span></td>' +
+      '<td><code>' + esc(item.itemCode) + '</code>' +
+      '<input type="hidden" data-f="inventoryItem" value="' + esc(item._id) + '">' +
+      '<input type="hidden" data-f="itemCode" value="' + esc(item.itemCode) + '"></td>' +
+      '<td><span data-f="itemName">' + esc(item.name) + '</span></td>' +
       '<td><input class="form__input" type="number" min="1" max="' + item.quantityOnHand + '" step="1" data-f="quantity" value="1" required></td>' +
       '<td><input class="form__input" type="number" min="0" step="0.01" data-f="unitPrice" value="' + Number(item.unitPrice || 0).toFixed(2) + '" required></td>' +
       '<td><span data-f="lineTotal">' + Number(item.unitPrice || 0).toFixed(2) + ' ج.م</span></td>' +
       '<td><button type="button" class="link link--danger rm">حذف</button></td>';
-    tr.querySelector('.rm').onclick = function () { tr.remove(); recalc(); };
-    tr.querySelectorAll('[data-f=quantity], [data-f=unitPrice]').forEach(function (el) {
-      el.addEventListener('input', recalc);
-    });
+    bindRemove(tr);
+    wireInputs(tr);
     body.appendChild(tr);
     recalc();
   }
+  function addManualLine() {
+    var tr = document.createElement('tr');
+    tr.setAttribute('data-line-source', 'manual');
+    tr.innerHTML =
+      '<td><span class="sale-line-badge sale-line-badge--manual">خارج المخزن</span></td>' +
+      '<td><input class="form__input" data-f="itemCode" placeholder="كود (اختياري)"></td>' +
+      '<td><input class="form__input" data-f="itemName" placeholder="اسم الصنف" required></td>' +
+      '<td><input class="form__input" type="number" min="1" step="1" data-f="quantity" value="1" required></td>' +
+      '<td><input class="form__input" type="number" min="0" step="0.01" data-f="unitPrice" value="0" required></td>' +
+      '<td><span data-f="lineTotal">0.00 ج.م</span></td>' +
+      '<td><button type="button" class="link link--danger rm">حذف</button></td>';
+    bindRemove(tr);
+    wireInputs(tr);
+    body.appendChild(tr);
+    recalc();
+  }
+  if (btnManual) btnManual.onclick = addManualLine;
   function isDuplicateItem(item) {
     var id = String(item._id);
-    var nodes = body.querySelectorAll('[data-f=inventoryItem]');
+    var nodes = body.querySelectorAll('tr[data-line-source="stock"] [data-f=inventoryItem]');
     for (var i = 0; i < nodes.length; i++) {
       if (nodes[i].value === id) return true;
     }
@@ -141,18 +238,28 @@
       minLen: 1,
       isDuplicate: isDuplicateItem,
       onSelect: function (x) {
-        addLine(x);
+        addLineFromStock(x);
       },
     });
   }
   form.onsubmit = function () {
     var rows = Array.prototype.slice.call(body.querySelectorAll('tr'));
     var lines = rows.map(function (tr) {
-      return {
-        inventoryItem: tr.querySelector('[data-f=inventoryItem]').value,
-        quantity: Number(tr.querySelector('[data-f=quantity]').value),
-        unitPrice: Number(tr.querySelector('[data-f=unitPrice]').value)
-      };
+      var invEl = tr.querySelector('[data-f=inventoryItem]');
+      var inventoryItem = invEl && invEl.value ? invEl.value.trim() : '';
+      var codeEl = tr.querySelector('[data-f=itemCode]');
+      var itemCode = codeEl ? codeEl.value.trim() : '';
+      var nameEl = tr.querySelector('[data-f=itemName]');
+      var itemName = nameEl && nameEl.tagName === 'INPUT' ? nameEl.value.trim() : (nameEl ? nameEl.textContent.trim() : '');
+      var qty = Number(tr.querySelector('[data-f=quantity]').value);
+      var unitPrice = Number(tr.querySelector('[data-f=unitPrice]').value);
+      if (inventoryItem) {
+        return { inventoryItem: inventoryItem, itemCode: itemCode, itemName: itemName, quantity: qty, unitPrice: unitPrice };
+      }
+      return { itemCode: itemCode, itemName: itemName, quantity: qty, unitPrice: unitPrice };
+    }).filter(function (l) {
+      if (l.inventoryItem) return true;
+      return Boolean(l.itemName);
     });
     hidden.value = JSON.stringify(lines);
   };
@@ -162,19 +269,33 @@
 <% } else if (mode === 'show' && sale) { %>
 <div class="page-head page-head--split">
   <h1 class="page-title">تفاصيل المبيعة</h1>
-  <a href="/sales" class="link">رجوع</a>
+  <div class="btn-row">
+    <a class="btn" href="/sales/<%= sale._id %>/pdf" target="_blank">تحميل PDF</a>
+    <a href="/sales" class="link">رجوع</a>
+  </div>
 </div>
+<% var vatAppliedDetail = sale.vat14Applied === true; %>
 <div class="panel">
   <dl class="meta-list">
+    <dt>اسم العميل</dt><dd><%= sale.customerName && String(sale.customerName).trim() ? sale.customerName : '—' %></dd>
+    <dt>رقم إذن الصرف</dt><dd><%= sale.disbursementNumber && String(sale.disbursementNumber).trim() ? sale.disbursementNumber : '—' %></dd>
+    <dt>رقم العميل</dt><dd><%= sale.customerNumber && String(sale.customerNumber).trim() ? sale.customerNumber : '—' %></dd>
+    <dt>طريقة الدفع</dt><dd><%= typeof salePaymentDisplay !== 'undefined' && salePaymentDisplay ? salePaymentDisplay : '—' %></dd>
     <dt>التاريخ</dt><dd><%= new Date(sale.soldAt).toLocaleString('ar-EG') %></dd>
+    <% if (vatAppliedDetail) { %>
+    <dt>ضريبة القيمة المضافة (١٤٪)</dt><dd><%= Number(sale.vat14Amount || 0).toFixed(2) %> ج.م</dd>
+    <dt>الإجمالي النهائي</dt><dd><strong><%= Number(sale.total).toFixed(2) %> ج.م</strong></dd>
+    <% } else { %>
     <dt>الإجمالي</dt><dd><strong><%= Number(sale.total).toFixed(2) %> ج.م</strong></dd>
-    <dt>ملاحظة</dt><dd><%= sale.paymentNote || '—' %></dd>
+    <% } %>
+    <dt>ملاحظة دفع</dt><dd><%= sale.paymentNote && String(sale.paymentNote).trim() ? sale.paymentNote : '—' %></dd>
     <dt>سجلها</dt><dd><%= sale.createdBy && (sale.createdBy.fullName || sale.createdBy.username) || '—' %></dd>
   </dl>
   <div class="table-wrap">
   <table class="table">
     <thead>
       <tr>
+        <th>المصدر</th>
         <th>الكود</th>
         <th>الاسم</th>
         <th>الكمية</th>
@@ -184,8 +305,10 @@
     </thead>
     <tbody>
       <% sale.lines.forEach(function (line) { %>
+      <% var fromInv = line.fromStock !== false && line.inventoryItem; %>
       <tr>
-        <td><%= line.itemCode %></td>
+        <td><%= fromInv ? 'مخزن' : 'خارج المخزن' %></td>
+        <td><%= line.itemCode || '—' %></td>
         <td><%= line.itemName %></td>
         <td><%= line.quantity %></td>
         <td><%= Number(line.unitPrice).toFixed(2) %> ج.م</td>

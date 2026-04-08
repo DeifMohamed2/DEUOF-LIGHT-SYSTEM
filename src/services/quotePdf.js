@@ -105,16 +105,26 @@ async function renderQuotePdfHtml(quote) {
         </div>`
       : '';
 
+  const quoteVatApplied = showPrice && Boolean(quote.vat14Applied);
+  const quoteVatAmount =
+    quoteVatApplied && quote.vat14Amount != null ? Number(quote.vat14Amount) : 0;
+
   const totalBlock =
     showPrice && quote.total != null
-      ? `<p class="grand-total"><strong>الإجمالي:</strong> ${Number(quote.total).toFixed(2)} ج.م</p>`
+      ? quoteVatApplied
+        ? `<div class="quote-totals-block">
+        <p><strong>ضريبة القيمة المضافة (١٤٪):</strong> ${quoteVatAmount.toFixed(2)} ج.م</p>
+        <p class="grand-total grand-total--quote-vat"><strong>الإجمالي النهائي:</strong> ${Number(quote.total).toFixed(2)} ج.م</p>
+      </div>`
+        : `<p class="grand-total"><strong>الإجمالي:</strong> ${Number(quote.total).toFixed(2)} ج.م</p>`
       : '';
 
-  const vatCurrencyBlock = showPrice
-    ? `<p class="price-vat-footnote"><span class="price-vat-footnote__star">${escapeHtml(
-        PRICED_QUOTE_VAT_NOTE_PREFIX
-      )}</span><span class="price-vat-footnote__text">${escapeHtml(PRICED_QUOTE_VAT_NOTE)}</span></p>`
-    : '';
+  const vatCurrencyBlock =
+    showPrice && !quoteVatApplied
+      ? `<p class="price-vat-footnote"><span class="price-vat-footnote__star">${escapeHtml(
+          PRICED_QUOTE_VAT_NOTE_PREFIX
+        )}</span><span class="price-vat-footnote__text">${escapeHtml(PRICED_QUOTE_VAT_NOTE)}</span></p>`
+      : '';
 
   const _pdfHtml = `<!DOCTYPE html>
 <html lang="ar" dir="rtl">
@@ -269,6 +279,19 @@ async function renderQuotePdfHtml(quote) {
       text-align: center;
       font-size: 14px;
     }
+    .quote-totals-block {
+      margin: 8px 0 12px;
+      text-align: right;
+      direction: rtl;
+      font-size: 13px;
+    }
+    .quote-totals-block p {
+      margin: 0.35em 0;
+    }
+    .grand-total--quote-vat {
+      text-align: right;
+      font-size: 15px;
+    }
     .price-vat-footnote {
       margin: 2px 0 14px;
       padding: 0;
@@ -348,12 +371,26 @@ async function renderQuotePdfHtml(quote) {
   return _pdfHtml;
 }
 
+function puppeteerLaunchOptions() {
+  const args = [
+    '--no-sandbox',
+    '--disable-setuid-sandbox',
+    '--disable-dev-shm-usage',
+    '--disable-gpu',
+    '--font-render-hinting=none',
+  ];
+  const opts = {
+    headless: true,
+    args,
+  };
+  const exe = (process.env.PUPPETEER_EXECUTABLE_PATH || '').trim();
+  if (exe) opts.executablePath = exe;
+  return opts;
+}
+
 async function quoteToPdfBuffer(quote) {
   const html = await renderQuotePdfHtml(quote);
-  const browser = await puppeteer.launch({
-    headless: true,
-    args: ['--no-sandbox', '--disable-setuid-sandbox'],
-  });
+  const browser = await puppeteer.launch(puppeteerLaunchOptions());
   try {
     const page = await browser.newPage();
     await page.setContent(html, { waitUntil: 'networkidle0' });
@@ -368,4 +405,4 @@ async function quoteToPdfBuffer(quote) {
   }
 }
 
-module.exports = { quoteToPdfBuffer, renderQuotePdfHtml };
+module.exports = { quoteToPdfBuffer, renderQuotePdfHtml, puppeteerLaunchOptions };

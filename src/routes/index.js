@@ -11,6 +11,7 @@ const {
   settingsRules,
   quoteCustomerValidators,
   saleValidators,
+  stockAdditionRules,
 } = require('../validators');
 
 const loginLimiter = rateLimit({
@@ -40,6 +41,8 @@ main.get('/api/inventory/search', appCtrl.inventorySearchJson);
 main.get('/inventory', appCtrl.inventoryList);
 main.get('/inventory/new', appCtrl.inventoryNewForm);
 main.post('/inventory', itemRules, appCtrl.inventoryCreate);
+main.get('/inventory/:id/details', appCtrl.inventoryItemDetails);
+main.post('/inventory/:id/add-stock', stockAdditionRules, appCtrl.inventoryAddStock);
 main.get('/inventory/:id/edit', appCtrl.inventoryEditForm);
 main.post('/inventory/:id/delete', requireAdmin, appCtrl.inventoryRemove);
 main.post('/inventory/:id', itemRules, appCtrl.inventoryUpdate);
@@ -57,6 +60,7 @@ main.get('/quotes/:id', appCtrl.quotesShow);
 main.get('/sales', appCtrl.salesList);
 main.get('/sales/new', appCtrl.salesNewForm);
 main.post('/sales', saleValidators, appCtrl.salesCreate);
+main.get('/sales/:id/pdf', appCtrl.salesPdf);
 main.get('/sales/:id', appCtrl.salesShow);
 
 main.get('/reports/revenue', requireAdmin, appCtrl.reportsRevenue);

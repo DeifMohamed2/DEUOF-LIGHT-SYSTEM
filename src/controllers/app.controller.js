@@ -6,9 +6,14 @@ const fs = require('fs');
 const InventoryItem = require('../models/InventoryItem');
 const Quote = require('../models/Quote');
 const Sale = require('../models/Sale');
+const StockAddition = require('../models/StockAddition');
 const { getOrCreateSettings } = require('../services/companySettings');
 const { quoteToPdfBuffer } = require('../services/quotePdf');
+const { saleToPdfBuffer } = require('../services/salePdf');
 const { quoteToWorkbook } = require('../services/quoteExcel');
+const { SALE_PAYMENT_METHODS, salePaymentLabel } = require('../constants/salePayment');
+
+const SALE_VAT_RATE = 0.14;
 
 const INV_PAGE = 15;
 const SALE_PAGE = 20;
@@ -262,6 +267,124 @@ async function inventoryRemove(req, res) {
   res.redirect('/inventory');
 }
 
+function parseYmdLocalDate(ymd) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(ymd || '').trim());
+  if (!m) return null;
+  const y = Number(m[1]);
+  const mo = Number(m[2]);
+  const d = Number(m[3]);
+  if (mo < 1 || mo > 12 || d < 1 || d > 31) return null;
+  const dt = new Date(y, mo - 1, d);
+  if (dt.getFullYear() !== y || dt.getMonth() !== mo - 1 || dt.getDate() !== d) return null;
+  return dt;
+}
+
+async function inventoryItemDetails(req, res) {
+  if (!mongoose.isValidObjectId(req.params.id)) {
+    req.flash('error', 'الصنف غير موجود');
+    return res.redirect('/inventory');
+  }
+  const itemId = new mongoose.Types.ObjectId(req.params.id);
+  const item = await InventoryItem.findById(req.params.id).lean();
+  if (!item) {
+    req.flash('error', 'الصنف غير موجود');
+    return res.redirect('/inventory');
+  }
+  const [sales, stockAdditions] = await Promise.all([
+    Sale.find({ 'lines.inventoryItem': itemId }).sort({ soldAt: -1 }).lean(),
+    StockAddition.find({ inventoryItem: itemId })
+      .sort({ addedAt: -1 })
+      .populate('createdBy', 'fullName username')
+      .lean(),
+  ]);
+  const deductionRows = [];
+  for (const sale of sales) {
+    let qty = 0;
+    for (const line of sale.lines) {
+      if (!line.inventoryItem || String(line.inventoryItem) !== String(itemId)) continue;
+      if (line.fromStock === false) continue;
+      qty += Number(line.quantity) || 0;
+    }
+    if (qty <= 0) continue;
+    deductionRows.push({
+      disbursementNumber: sale.disbursementNumber || '',
+      customerName: sale.customerName || '',
+      soldAt: sale.soldAt,
+      quantityReduced: qty,
+      saleId: sale._id,
+    });
+  }
+  deductionRows.sort((a, b) => {
+    const da = String(a.disbursementNumber || '').trim();
+    const db = String(b.disbursementNumber || '').trim();
+    if (!da && db) return 1;
+    if (da && !db) return -1;
+    if (da !== db) return da.localeCompare(db, 'ar', { numeric: true });
+    return new Date(b.soldAt) - new Date(a.soldAt);
+  });
+  res.render(
+    'sections/inventory',
+    shell({
+      section: 'inventory',
+      title: `تفاصيل الصنف`,
+      mode: 'details',
+      item,
+      deductionRows,
+      stockAdditions,
+      items: [],
+      page: 1,
+      totalPages: 1,
+      q: '',
+      errors: null,
+    })
+  );
+}
+
+async function inventoryAddStock(req, res) {
+  const id = req.params.id;
+  const back = mongoose.isValidObjectId(id) ? `/inventory/${id}/details` : '/inventory';
+  if (!mongoose.isValidObjectId(id)) {
+    req.flash('error', 'الصنف غير موجود');
+    return res.redirect('/inventory');
+  }
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    req.flash('error', errors.array().map((e) => e.msg).join(' — '));
+    return res.redirect(back);
+  }
+  const addedAt = parseYmdLocalDate(req.body.addedAt);
+  if (!addedAt) {
+    req.flash('error', 'تاريخ غير صالح');
+    return res.redirect(back);
+  }
+  const quantity = Number(req.body.quantity);
+  if (!Number.isInteger(quantity) || quantity < 1) {
+    req.flash('error', 'الكمية غير صالحة');
+    return res.redirect(back);
+  }
+  try {
+    const item = await InventoryItem.findById(id);
+    if (!item) {
+      req.flash('error', 'الصنف غير موجود');
+      return res.redirect('/inventory');
+    }
+    await StockAddition.create({
+      inventoryItem: item._id,
+      addedAt,
+      source: req.body.source.trim(),
+      quantity,
+      createdBy: req.session.userId,
+    });
+    item.quantityOnHand += quantity;
+    await item.save();
+    req.flash('success', 'تمت إضافة الكمية وتسجيلها');
+  } catch (e) {
+    console.error(e);
+    req.flash('error', 'تعذر حفظ الإضافة');
+  }
+  res.redirect(back);
+}
+
 function parseQuoteLinesJson(raw, type) {
   let lines;
   try {
@@ -422,19 +545,25 @@ async function quotesCreateFromStock(req, res) {
       }
     }
   }
-  let total = 0;
+  let lineSum = 0;
   const lines = parsed.lines.map((l) => {
     const lineTotal = Number(l.quantity) * Number(l.price || 0);
-    total += lineTotal;
+    lineSum += lineTotal;
     return { ...l, itemCode: l.itemCode || '' };
   });
+  const subtotal = Math.round(lineSum * 100) / 100;
+  const vat14Applied = req.body.vat14 === 'on' || req.body.vat14 === '1' || req.body.vat14 === 'true';
+  const vat14Amount = vat14Applied ? Math.round(subtotal * SALE_VAT_RATE * 100) / 100 : 0;
+  const finalTotal = Math.round((subtotal + vat14Amount) * 100) / 100;
   await Quote.create({
     type: 'from_stock',
     customerName: req.body.customerName.trim(),
     customerPhone: (req.body.customerPhone || '').trim(),
     lines,
-    subtotal: total,
-    total,
+    subtotal,
+    vat14Applied,
+    vat14Amount,
+    total: finalTotal,
     notes: (req.body.notes || '').trim(),
     createdBy: req.session.userId,
   });
@@ -515,14 +644,25 @@ function parseSaleLinesJson(raw) {
   }
   const normalized = [];
   for (const line of lines) {
-    if (!line.inventoryItem || !mongoose.isValidObjectId(line.inventoryItem)) {
-      return { error: 'معرف الصنف غير صالح' };
-    }
     const quantity = Number(line.quantity);
-    const unitPrice = Number(line.unitPrice);
+    const unitPrice = Number(line.unitPrice ?? line.price);
     if (!Number.isFinite(quantity) || quantity < 1) return { error: 'الكمية غير صالحة' };
     if (!Number.isFinite(unitPrice) || unitPrice < 0) return { error: 'السعر غير صالح' };
-    normalized.push({ inventoryItem: line.inventoryItem, quantity, unitPrice });
+    const invId = line.inventoryItem != null ? String(line.inventoryItem).trim() : '';
+    if (invId && mongoose.isValidObjectId(invId)) {
+      normalized.push({ fromStock: true, inventoryItem: invId, quantity, unitPrice });
+    } else {
+      const itemName = (line.itemName || '').trim();
+      if (!itemName) return { error: 'اسم الصنف مطلوب في السطور خارج المخزن' };
+      const itemCode = (line.itemCode || '').trim();
+      normalized.push({
+        fromStock: false,
+        itemCode,
+        itemName,
+        quantity,
+        unitPrice,
+      });
+    }
   }
   return { lines: normalized };
 }
@@ -530,6 +670,26 @@ function parseSaleLinesJson(raw) {
 async function salesList(req, res) {
   const filter = {};
   if (req.session.role !== 'admin') filter.createdBy = req.session.userId;
+  const q = (req.query.q || '').trim();
+  if (q) {
+    const esc = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const rx = new RegExp(esc, 'i');
+    const or = [
+      { customerName: rx },
+      { disbursementNumber: rx },
+      { customerNumber: rx },
+      { paymentMethod: rx },
+      { paymentNote: rx },
+      { 'lines.itemName': rx },
+      { 'lines.itemCode': rx },
+    ];
+    const compact = q.replace(/,/g, '').replace(/\s/g, '');
+    if (/^\d+(\.\d{1,2})?$/.test(compact)) {
+      const n = Number(compact);
+      if (Number.isFinite(n)) or.push({ total: n });
+    }
+    filter.$or = or;
+  }
   const page = Math.max(1, parseInt(req.query.page, 10) || 1);
   const [sales, total] = await Promise.all([
     Sale.find(filter)
@@ -551,24 +711,51 @@ async function salesList(req, res) {
       totalPages: Math.max(1, Math.ceil(total / SALE_PAGE)),
       isAdmin: req.session.role === 'admin',
       sale: null,
+      searchQ: q,
     })
   );
 }
 
-function salesNewForm(req, res) {
-  res.render(
-    'sections/sales',
-    shell({
-      section: 'sales',
-      title: 'تسجيل مبيعة',
-      mode: 'new',
-      sales: [],
-      page: 1,
-      totalPages: 1,
-      isAdmin: req.session.role === 'admin',
-      sale: null,
-    })
-  );
+/** Next إذن صرف: max numeric value among existing sales + 1 (digits only), else 1. */
+async function computeNextDisbursementNumber() {
+  const docs = await Sale.find({
+    disbursementNumber: { $exists: true, $nin: [null, ''] },
+  })
+    .select('disbursementNumber')
+    .lean();
+  let max = 0;
+  for (const d of docs) {
+    const t = String(d.disbursementNumber || '').trim();
+    if (!/^\d+$/.test(t)) continue;
+    const n = parseInt(t, 10);
+    if (Number.isFinite(n) && n > max) max = n;
+  }
+  return String(max + 1);
+}
+
+async function salesNewForm(req, res, next) {
+  let suggestedDisbursementNumber = '1';
+  try {
+    suggestedDisbursementNumber = await computeNextDisbursementNumber();
+    res.render(
+      'sections/sales',
+      shell({
+        section: 'sales',
+        title: 'تسجيل مبيعة',
+        mode: 'new',
+        sales: [],
+        page: 1,
+        totalPages: 1,
+        isAdmin: req.session.role === 'admin',
+        sale: null,
+        searchQ: '',
+        suggestedDisbursementNumber,
+        salePaymentMethods: SALE_PAYMENT_METHODS,
+      })
+    );
+  } catch (e) {
+    next(e);
+  }
 }
 
 async function salesCreate(req, res) {
@@ -587,38 +774,68 @@ async function salesCreate(req, res) {
     const saleLines = [];
     let total = 0;
     for (const line of parsed.lines) {
-      const updated = await InventoryItem.findOneAndUpdate(
-        { _id: line.inventoryItem, quantityOnHand: { $gte: line.quantity } },
-        { $inc: { quantityOnHand: -line.quantity } },
-        { new: true }
-      );
-      if (!updated) {
-        for (const d of decremented.reverse()) {
-          await InventoryItem.updateOne({ _id: d.id }, { $inc: { quantityOnHand: d.qty } });
+      if (line.fromStock) {
+        const updated = await InventoryItem.findOneAndUpdate(
+          { _id: line.inventoryItem, quantityOnHand: { $gte: line.quantity } },
+          { $inc: { quantityOnHand: -line.quantity } },
+          { new: true }
+        );
+        if (!updated) {
+          for (const d of decremented.reverse()) {
+            await InventoryItem.updateOne({ _id: d.id }, { $inc: { quantityOnHand: d.qty } });
+          }
+          req.flash('error', 'الكمية غير كافية في المخزون لأحد الأصناف');
+          return res.redirect('/sales/new');
         }
-        req.flash('error', 'الكمية غير كافية في المخزون لأحد الأصناف');
-        return res.redirect('/sales/new');
+        decremented.push({ id: line.inventoryItem, qty: line.quantity });
+        const lineTotal = line.quantity * line.unitPrice;
+        total += lineTotal;
+        saleLines.push({
+          fromStock: true,
+          inventoryItem: line.inventoryItem,
+          itemCode: updated.itemCode,
+          itemName: updated.name,
+          quantity: line.quantity,
+          unitPrice: line.unitPrice,
+          lineTotal,
+        });
+      } else {
+        const lineTotal = line.quantity * line.unitPrice;
+        total += lineTotal;
+        saleLines.push({
+          fromStock: false,
+          inventoryItem: null,
+          itemCode: line.itemCode || '—',
+          itemName: line.itemName,
+          quantity: line.quantity,
+          unitPrice: line.unitPrice,
+          lineTotal,
+        });
       }
-      decremented.push({ id: line.inventoryItem, qty: line.quantity });
-      const lineTotal = line.quantity * line.unitPrice;
-      total += lineTotal;
-      saleLines.push({
-        inventoryItem: line.inventoryItem,
-        itemCode: updated.itemCode,
-        itemName: updated.name,
-        quantity: line.quantity,
-        unitPrice: line.unitPrice,
-        lineTotal,
-      });
     }
+    const subtotal = Math.round(total * 100) / 100;
+    const vat14Applied = req.body.vat14 === 'on' || req.body.vat14 === '1' || req.body.vat14 === 'true';
+    const vat14Amount = vat14Applied ? Math.round(subtotal * SALE_VAT_RATE * 100) / 100 : 0;
+    const finalTotal = Math.round((subtotal + vat14Amount) * 100) / 100;
     await Sale.create({
+      customerName: req.body.customerName.trim(),
+      disbursementNumber: (req.body.disbursementNumber || '').trim(),
+      customerNumber: (req.body.customerNumber || '').trim(),
+      paymentMethod: req.body.paymentMethod.trim(),
       lines: saleLines,
-      total,
+      subtotal,
+      vat14Applied,
+      vat14Amount,
+      total: finalTotal,
       soldAt: new Date(),
       paymentNote: (req.body.paymentNote || '').trim(),
       createdBy: req.session.userId,
     });
-    req.flash('success', 'تم تسجيل المبيعة وتحديث المخزون');
+    const anyStock = saleLines.some((l) => l.fromStock);
+    req.flash(
+      'success',
+      anyStock ? 'تم تسجيل المبيعة وخصم أصناف المخزن' : 'تم تسجيل المبيعة (بدون خصم من المخزن)'
+    );
     res.redirect('/sales');
   } catch (e) {
     console.error(e);
@@ -651,8 +868,29 @@ async function salesShow(req, res) {
       page: 1,
       totalPages: 1,
       isAdmin: req.session.role === 'admin',
+      searchQ: '',
+      salePaymentMethods: SALE_PAYMENT_METHODS,
+      salePaymentDisplay: salePaymentLabel(sale.paymentMethod),
     })
   );
+}
+
+async function salesPdf(req, res) {
+  if (!mongoose.isValidObjectId(req.params.id)) return res.status(404).send('Not found');
+  const filter = { _id: req.params.id };
+  if (req.session.role !== 'admin') filter.createdBy = req.session.userId;
+  const sale = await Sale.findOne(filter).lean();
+  if (!sale) return res.status(404).send('Not found');
+  try {
+    const buf = await saleToPdfBuffer(sale);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="sale-${sale._id}.pdf"`);
+    res.send(Buffer.from(buf));
+  } catch (e) {
+    console.error(e);
+    req.flash('error', 'تعذر إنشاء ملف PDF');
+    res.status(500).type('text/plain; charset=utf-8').send('تعذر إنشاء ملف PDF');
+  }
 }
 
 async function settingsShow(req, res) {
@@ -764,6 +1002,8 @@ module.exports = {
   inventorySearchJson,
   inventoryNewForm,
   inventoryCreate,
+  inventoryItemDetails,
+  inventoryAddStock,
   inventoryEditForm,
   inventoryUpdate,
   inventoryRemove,
@@ -779,6 +1019,7 @@ module.exports = {
   salesNewForm,
   salesCreate,
   salesShow,
+  salesPdf,
   settingsShow,
   settingsUpdate,
   reportsRevenue,

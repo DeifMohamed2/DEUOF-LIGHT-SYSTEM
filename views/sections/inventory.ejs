@@ -28,7 +28,7 @@
       <th>البند</th>
       <th>الكمية</th>
       <th>سعر الوحدة (ج.م)</th>
-      <th></th>
+      <th class="table__actions-col">إجراءات</th>
     </tr>
   </thead>
   <tbody>
@@ -39,7 +39,9 @@
       <td><%= row.band || '—' %></td>
       <td><%= row.quantityOnHand %></td>
       <td><%= Number(row.unitPrice).toFixed(2) %> ج.م</td>
-      <td class="table__actions">
+      <td class="table__actions table__actions--wrap">
+        <a href="/inventory/<%= row._id %>/details" class="link">التفاصيل</a>
+        <button type="button" class="link js-open-add-stock" data-id="<%= row._id %>" data-code="<%= row.itemCode %>" data-name="<%= row.name %>">إضافة كمية</button>
         <a href="/inventory/<%= row._id %>/edit" class="link">تعديل</a>
         <% if (isAdmin) { %>
         <form action="/inventory/<%= row._id %>/delete" method="post" class="inline-form" onsubmit="return confirm('حذف هذا الصنف؟');">
@@ -51,6 +53,26 @@
     <% }) %>
   </tbody>
 </table>
+</div>
+
+<div id="stock-modal" class="modal" hidden aria-hidden="true">
+  <div class="modal__backdrop js-stock-modal-close" tabindex="-1"></div>
+  <div class="modal__dialog" role="dialog" aria-modal="true" aria-labelledby="stock-modal-title">
+    <h2 id="stock-modal-title" class="modal__title">إضافة كمية للمخزن</h2>
+    <p class="muted modal__subtitle" id="stock-modal-item"></p>
+    <form method="post" id="stock-modal-form" class="form">
+      <label class="form__label" for="stock-modal-date">تاريخ الإضافة</label>
+      <input type="date" name="addedAt" id="stock-modal-date" class="form__input" required>
+      <label class="form__label" for="stock-modal-source">من أين / المصدر</label>
+      <input type="text" name="source" id="stock-modal-source" class="form__input" required maxlength="500" placeholder="مورد، مستودع، مذكرة إدخال…">
+      <label class="form__label" for="stock-modal-qty">الكمية المضافة</label>
+      <input type="number" name="quantity" id="stock-modal-qty" class="form__input" min="1" step="1" required>
+      <div class="form__actions">
+        <button type="submit" class="btn btn--primary">حفظ</button>
+        <button type="button" class="btn btn--ghost js-stock-modal-close">إلغاء</button>
+      </div>
+    </form>
+  </div>
 </div>
 
 <div class="pagination">
@@ -90,6 +112,133 @@
         .catch(function () { hint.hidden = true; });
     }, 220);
   });
+})();
+</script>
+
+<script>
+(function () {
+  var modal = document.getElementById('stock-modal');
+  var form = document.getElementById('stock-modal-form');
+  var dateIn = document.getElementById('stock-modal-date');
+  var label = document.getElementById('stock-modal-item');
+  if (!modal || !form) return;
+  function openModal(btn) {
+    var id = btn.getAttribute('data-id');
+    form.action = '/inventory/' + id + '/add-stock';
+    label.textContent = (btn.getAttribute('data-code') || '') + ' — ' + (btn.getAttribute('data-name') || '');
+    if (dateIn) dateIn.valueAsDate = new Date();
+    modal.hidden = false;
+    modal.setAttribute('aria-hidden', 'false');
+  }
+  function closeModal() {
+    modal.hidden = true;
+    modal.setAttribute('aria-hidden', 'true');
+  }
+  document.querySelectorAll('.js-open-add-stock').forEach(function (btn) {
+    btn.addEventListener('click', function () { openModal(btn); });
+  });
+  document.querySelectorAll('.js-stock-modal-close').forEach(function (el) {
+    el.addEventListener('click', function () { closeModal(); });
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && !modal.hidden) closeModal();
+  });
+})();
+</script>
+
+<% } else if (mode === 'details') { %>
+<div class="page-head page-head--split">
+  <div>
+    <h1 class="page-title">تفاصيل الصنف</h1>
+    <p class="muted"><code><%= item.itemCode %></code> — <%= item.name %><% if (item.band) { %> — بند: <%= item.band %><% } %></p>
+  </div>
+  <div class="btn-row">
+    <a href="/inventory/<%= item._id %>/edit" class="btn btn--ghost">تعديل الصنف</a>
+    <a href="/inventory" class="btn btn--primary">رجوع للمخزن</a>
+  </div>
+</div>
+
+<div class="panel">
+  <dl class="meta-list">
+    <dt>الكمية الحالية في المخزن</dt><dd><strong><%= item.quantityOnHand %></strong></dd>
+    <dt>سعر الوحدة (ج.م)</dt><dd><%= Number(item.unitPrice).toFixed(2) %> ج.م</dd>
+  </dl>
+</div>
+
+<h2 class="page-subtitle">خصومات المخزن عبر المبيعات <span class="page-subtitle__hint muted">(مرتبة حسب رقم إذن الصرف)</span></h2>
+<% if (!deductionRows.length) { %>
+  <div class="panel empty">لا توجد مبيعات مرتبطة بهذا الصنف من المخزن.</div>
+<% } else { %>
+<div class="table-wrap">
+<table class="table">
+  <thead>
+    <tr>
+      <th>رقم إذن الصرف</th>
+      <th>اسم العميل</th>
+      <th>تاريخ البيع</th>
+      <th>الكمية المخصومة</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    <% deductionRows.forEach(function (r) { %>
+    <tr>
+      <td><%= r.disbursementNumber && String(r.disbursementNumber).trim() ? r.disbursementNumber : '—' %></td>
+      <td><%= r.customerName && String(r.customerName).trim() ? r.customerName : '—' %></td>
+      <td><%= new Date(r.soldAt).toLocaleString('ar-EG') %></td>
+      <td><strong><%= r.quantityReduced %></strong></td>
+      <td><a class="link" href="/sales/<%= r.saleId %>">المبيعة</a></td>
+    </tr>
+    <% }) %>
+  </tbody>
+</table>
+</div>
+<% } %>
+
+<h2 class="page-subtitle">سجل إضافات الكمية</h2>
+<% if (!stockAdditions.length) { %>
+  <div class="panel empty">لا توجد إضافات مسجلة بعد.</div>
+<% } else { %>
+<div class="table-wrap">
+<table class="table">
+  <thead>
+    <tr>
+      <th>تاريخ الإضافة</th>
+      <th>من أين / المصدر</th>
+      <th>الكمية</th>
+      <th>سجّلها</th>
+    </tr>
+  </thead>
+  <tbody>
+    <% stockAdditions.forEach(function (a) { %>
+    <tr>
+      <td><%= new Date(a.addedAt).toLocaleDateString('ar-EG') %></td>
+      <td><%= a.source %></td>
+      <td><strong><%= a.quantity %></strong></td>
+      <td><%= a.createdBy && (a.createdBy.fullName || a.createdBy.username) || '—' %></td>
+    </tr>
+    <% }) %>
+  </tbody>
+</table>
+</div>
+<% } %>
+
+<div class="panel panel--highlight">
+  <h3 class="form__section-title">إضافة كمية للمخزن</h3>
+  <form class="form" method="post" action="/inventory/<%= item._id %>/add-stock">
+    <label class="form__label" for="details-add-date">تاريخ الإضافة</label>
+    <input type="date" name="addedAt" id="details-add-date" class="form__input" required>
+    <label class="form__label" for="details-add-source">من أين / المصدر</label>
+    <input type="text" name="source" id="details-add-source" class="form__input" required maxlength="500" placeholder="مورد، مستودع، مذكرة إدخال…">
+    <label class="form__label" for="details-add-qty">الكمية المضافة</label>
+    <input type="number" name="quantity" id="details-add-qty" class="form__input" min="1" step="1" required>
+    <button type="submit" class="btn btn--primary">تسجيل الإضافة</button>
+  </form>
+</div>
+<script>
+(function () {
+  var d = document.getElementById('details-add-date');
+  if (d) d.valueAsDate = new Date();
 })();
 </script>
 

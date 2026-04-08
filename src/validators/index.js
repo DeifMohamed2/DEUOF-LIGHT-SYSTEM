@@ -1,4 +1,5 @@
 const { body } = require('express-validator');
+const { SALE_PAYMENT_VALUES } = require('../constants/salePayment');
 
 const loginRules = [
   body('username').trim().notEmpty().withMessage('اسم المستخدم مطلوب'),
@@ -34,7 +35,29 @@ const quoteCustomerValidators = [
   body('notes').optional().trim().isLength({ max: 3000 }).withMessage('الملاحظات طويلة جداً'),
 ];
 
-const saleValidators = [body('linesJson').notEmpty().withMessage('الأسطر مطلوبة')];
+const saleValidators = [
+  body('customerName').trim().notEmpty().withMessage('اسم العميل مطلوب'),
+  body('disbursementNumber')
+    .trim()
+    .notEmpty()
+    .withMessage('رقم إذن الصرف مطلوب')
+    .isLength({ max: 200 }),
+  body('customerNumber').optional().trim().isLength({ max: 200 }),
+  body('paymentMethod')
+    .trim()
+    .notEmpty()
+    .withMessage('طريقة الدفع مطلوبة')
+    .isIn(SALE_PAYMENT_VALUES)
+    .withMessage('طريقة دفع غير صالحة'),
+  body('paymentNote').optional().trim().isLength({ max: 2000 }),
+  body('linesJson').notEmpty().withMessage('الأسطر مطلوبة'),
+];
+
+const stockAdditionRules = [
+  body('addedAt').trim().notEmpty().withMessage('تاريخ الإضافة مطلوب'),
+  body('source').trim().notEmpty().withMessage('المصدر (من أين) مطلوب').isLength({ max: 500 }),
+  body('quantity').toInt().isInt({ min: 1 }).withMessage('الكمية يجب أن تكون عدداً صحيحاً ≥ 1'),
+];
 
 module.exports = {
   loginRules,
@@ -42,4 +65,5 @@ module.exports = {
   settingsRules,
   quoteCustomerValidators,
   saleValidators,
+  stockAdditionRules,
 };

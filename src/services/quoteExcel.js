@@ -39,7 +39,12 @@ async function quoteToWorkbook(quote) {
 
   const showPrice = quote.type === 'from_stock';
   if (showPrice) {
-    ws.getCell(`A${row}`).value = `${PRICED_QUOTE_VAT_NOTE_PREFIX}${PRICED_QUOTE_VAT_NOTE}`;
+    if (quote.vat14Applied) {
+      ws.getCell(`A${row}`).value =
+        '* يُضاف ١٤٪ ضريبة قيمة مضافة على مجموع بنود العرض (يظهر في الإجمالي النهائي).';
+    } else {
+      ws.getCell(`A${row}`).value = `${PRICED_QUOTE_VAT_NOTE_PREFIX}${PRICED_QUOTE_VAT_NOTE}`;
+    }
     ws.getCell(`A${row}`).font = { size: 9 };
     ws.getCell(`A${row}`).alignment = { horizontal: 'left', wrapText: true };
     row += 1;
@@ -70,9 +75,18 @@ async function quoteToWorkbook(quote) {
 
   if (showPrice && quote.total != null) {
     row += 1;
-    ws.getCell(`D${row}`).value = 'الإجمالي (ج.م)';
-    ws.getCell(`E${row}`).value = Number(quote.total);
-    ws.getCell(`E${row}`).font = { bold: true };
+    if (quote.vat14Applied) {
+      ws.getCell(`D${row}`).value = 'ضريبة القيمة المضافة (١٤٪)';
+      ws.getCell(`E${row}`).value = Number(quote.vat14Amount || 0);
+      row += 1;
+      ws.getCell(`D${row}`).value = 'الإجمالي النهائي (ج.م)';
+      ws.getCell(`E${row}`).value = Number(quote.total);
+      ws.getCell(`E${row}`).font = { bold: true };
+    } else {
+      ws.getCell(`D${row}`).value = 'الإجمالي (ج.م)';
+      ws.getCell(`E${row}`).value = Number(quote.total);
+      ws.getCell(`E${row}`).font = { bold: true };
+    }
   }
 
   if (quote.notes && String(quote.notes).trim()) {

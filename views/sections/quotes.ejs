@@ -132,7 +132,7 @@
 </div>
 <div class="panel">
   <p class="muted">أضف أصنافاً من المخزن بالبحث أدناه، أو سطوراً يدوية (أصناف غير مسجلة في المخزن) كما في طلب التسعير — مع إدخال السعر لكل سطر.</p>
-  <div class="search-hint priced-quote-hint priced-quote-hint--small" dir="ltr"><span class="priced-quote-hint__star"><%= pricedQuoteVatNotePrefix %></span><span dir="rtl"><strong>تنبيه:</strong> <%= pricedQuoteVatNote %></span></div>
+  <div class="search-hint priced-quote-hint priced-quote-hint--small" id="stock-quote-vat-inclusive-hint" dir="ltr"><span class="priced-quote-hint__star"><%= pricedQuoteVatNotePrefix %></span><span dir="rtl"><strong>تنبيه:</strong> <%= pricedQuoteVatNote %></span></div>
   <div class="inventory-picker">
     <div class="inventory-picker__row">
       <input type="search" id="stock-search" class="form__input form__input--search inventory-picker__input" placeholder="ابحث بالكود أو الاسم أو البند ثم اختر من القائمة…" autocomplete="off" aria-autocomplete="list" aria-controls="stock-pick-results">
@@ -148,6 +148,11 @@
     <input class="form__input" name="customerPhone">
     <label class="form__label">ملاحظات / شروط الدفع — تظهر في PDF</label>
     <textarea class="form__input" name="notes" rows="4"><%= typeof defaultQuoteNotes !== 'undefined' ? defaultQuoteNotes : '' %></textarea>
+    <label class="form__check-row">
+      <input type="checkbox" name="vat14" id="quote-stock-vat14" value="1">
+      <span>أضف ١٤٪ ضريبة قيمة مضافة على إجمالي البنود</span>
+    </label>
+    <p class="muted form__hint" id="stock-quote-vat-add-hint" hidden>عند التفعيل يُخفى تنبيه «الأسعار تشمل الضريبة» ويُضاف ١٤٪ على مجموع الأسطر في الإجمالي النهائي (كما في المبيعات).</p>
     <h3 class="form__section-title">الأسطر</h3>
     <div class="form__stock-tools">
       <button type="button" class="btn btn--sm" id="stock-add-manual">+ إضافة سطر يدوي</button>
@@ -169,8 +174,11 @@
     </table>
     </div>
     <div class="stock-quote-totals" id="stock-quote-totals-wrap" hidden>
-      <p class="total-line total-line--stock-preview"><strong>الإجمالي:</strong> <span id="stock-grand-total">0.00 ج.م</span></p>
-      <p class="muted stock-quote-totals-hint">الإجمالي = مجموع (الكمية × السعر) لكل سطر؛ بعد الحفظ يظهر أيضاً في صفحة العرض وPDF وExcel.</p>
+      <div class="sale-totals-preview sale-totals-preview--rtl">
+        <p class="total-line muted" id="stock-line-vat" hidden>ضريبة القيمة المضافة (١٤٪): <strong id="stock-tv-vat">0.00</strong> ج.م</p>
+        <p class="total-line total-line--stock-preview"><span id="stock-tv-final-label">الإجمالي</span>: <strong id="stock-tv-final">0.00</strong> ج.م</p>
+      </div>
+      <p class="muted stock-quote-totals-hint">بعد الحفظ يظهر المجموع في صفحة العرض وPDF وExcel.</p>
     </div>
     <div class="form__actions">
       <button type="submit" class="btn btn--primary">حفظ عرض السعر</button>
@@ -184,6 +192,8 @@
   var form = document.getElementById('quote-form-stock');
   var hidden = document.getElementById('linesJsonStock');
   var btnManual = document.getElementById('stock-add-manual');
+  var vatCb = document.getElementById('quote-stock-vat14');
+  var VAT = 0.14;
   if (!body || !form || !hidden) return;
   function esc(s) {
     return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
@@ -200,6 +210,14 @@
     if (!out || !qIn || !pIn) return;
     out.textContent = fmtMoney(Number(qIn.value) * Number(pIn.value)) + ' ج.م';
   }
+  function toggleStockVatHints() {
+    var inclusive = document.getElementById('stock-quote-vat-inclusive-hint');
+    var addHint = document.getElementById('stock-quote-vat-add-hint');
+    if (!inclusive) return;
+    var on = vatCb && vatCb.checked;
+    inclusive.hidden = !!on;
+    if (addHint) addHint.hidden = !on;
+  }
   function refreshStockGrandTotal() {
     var rows = body.querySelectorAll('tr');
     var sum = 0;
@@ -208,11 +226,33 @@
       var p = Number(rows[i].querySelector('[data-f=price]').value);
       if (Number.isFinite(q) && Number.isFinite(p)) sum += q * p;
     }
+    sum = Math.round(sum * 100) / 100;
     var wrap = document.getElementById('stock-quote-totals-wrap');
-    var gt = document.getElementById('stock-grand-total');
-    if (gt) gt.textContent = fmtMoney(sum) + ' ج.م';
+    var lineVat = document.getElementById('stock-line-vat');
+    var tvVat = document.getElementById('stock-tv-vat');
+    var tvFinal = document.getElementById('stock-tv-final');
+    var tvLabel = document.getElementById('stock-tv-final-label');
     if (wrap) wrap.hidden = rows.length === 0;
+    var vatOn = vatCb && vatCb.checked;
+    if (vatOn) {
+      if (lineVat) lineVat.hidden = false;
+      var vatAmt = Math.round(sum * VAT * 100) / 100;
+      if (tvVat) tvVat.textContent = fmtMoney(vatAmt);
+      if (tvFinal) tvFinal.textContent = fmtMoney(sum + vatAmt);
+      if (tvLabel) tvLabel.textContent = 'الإجمالي النهائي';
+    } else {
+      if (lineVat) lineVat.hidden = true;
+      if (tvFinal) tvFinal.textContent = fmtMoney(sum);
+      if (tvLabel) tvLabel.textContent = 'الإجمالي';
+    }
   }
+  if (vatCb) {
+    vatCb.addEventListener('change', function () {
+      toggleStockVatHints();
+      refreshStockGrandTotal();
+    });
+  }
+  toggleStockVatHints();
   function bindRemove(tr) {
     tr.querySelector('.rm').onclick = function () {
       tr.remove();
@@ -322,8 +362,11 @@
     <dt>ملاحظات</dt><dd class="quote-notes"><%= quote.notes %></dd>
     <% } %>
   </dl>
-  <% if (quote.type === 'from_stock') { %>
+  <% if (quote.type === 'from_stock' && !quote.vat14Applied) { %>
   <div class="search-hint priced-quote-hint priced-quote-hint--small" dir="ltr"><span class="priced-quote-hint__star"><%= pricedQuoteVatNotePrefix %></span><span dir="rtl"><strong>تنبيه:</strong> <%= pricedQuoteVatNote %></span></div>
+  <% } %>
+  <% if (quote.type === 'from_stock' && quote.vat14Applied) { %>
+  <p class="muted search-hint priced-quote-hint--small">يُضاف ١٤٪ ضريبة قيمة مضافة على مجموع البنود (مدرج في الإجمالي النهائي).</p>
   <% } %>
   <div class="table-wrap">
   <table class="table">
@@ -351,7 +394,14 @@
   </table>
   </div>
   <% if (quote.type === 'from_stock') { %>
-  <p class="total-line"><strong>الإجمالي:</strong> <%= Number(quote.total).toFixed(2) %> ج.م</p>
+    <% if (quote.vat14Applied) { %>
+    <div class="sale-totals-preview sale-totals-preview--rtl">
+      <p class="total-line muted">ضريبة القيمة المضافة (١٤٪): <strong><%= Number(quote.vat14Amount || 0).toFixed(2) %></strong> ج.م</p>
+      <p class="total-line"><strong>الإجمالي النهائي:</strong> <%= Number(quote.total).toFixed(2) %> ج.م</p>
+    </div>
+    <% } else { %>
+    <p class="total-line"><strong>الإجمالي:</strong> <%= Number(quote.total).toFixed(2) %> ج.م</p>
+    <% } %>
   <% } %>
 </div>
 <% } %>
