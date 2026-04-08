@@ -5,6 +5,7 @@ const { requireAuth, requireAdmin } = require('../middleware/auth');
 const { uploadLogo } = require('../middleware/uploadLogo');
 const auth = require('../controllers/auth.controller');
 const appCtrl = require('../controllers/app.controller');
+const usersCtrl = require('../controllers/users.controller');
 const {
   loginRules,
   itemRules,
@@ -12,6 +13,8 @@ const {
   quoteCustomerValidators,
   saleValidators,
   stockAdditionRules,
+  userCreateRules,
+  userUpdateRules,
 } = require('../validators');
 
 const loginLimiter = rateLimit({
@@ -64,6 +67,12 @@ main.get('/sales/:id/pdf', appCtrl.salesPdf);
 main.get('/sales/:id', appCtrl.salesShow);
 
 main.get('/reports/revenue', requireAdmin, appCtrl.reportsRevenue);
+
+main.get('/users', requireAdmin, usersCtrl.usersList);
+main.post('/users', requireAdmin, userCreateRules, usersCtrl.usersCreate);
+main.get('/users/:id', requireAdmin, usersCtrl.usersShow);
+main.post('/users/:id', requireAdmin, userUpdateRules, usersCtrl.usersUpdate);
+main.post('/users/:id/delete', requireAdmin, usersCtrl.usersDelete);
 
 const router = express.Router();
 router.use(authRouter);

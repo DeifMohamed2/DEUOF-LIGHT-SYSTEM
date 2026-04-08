@@ -59,6 +59,36 @@ const stockAdditionRules = [
   body('quantity').toInt().isInt({ min: 1 }).withMessage('الكمية يجب أن تكون عدداً صحيحاً ≥ 1'),
 ];
 
+const userCreateRules = [
+  body('username')
+    .trim()
+    .notEmpty()
+    .withMessage('اسم المستخدم مطلوب')
+    .isLength({ min: 2, max: 64 })
+    .withMessage('اسم المستخدم بين ٢ و ٦٤ حرفاً')
+    .matches(/^[a-z0-9._-]+$/i)
+    .withMessage('اسم المستخدم: أحرف إنجليزية وأرقام و . _ - فقط'),
+  body('password')
+    .notEmpty()
+    .withMessage('كلمة المرور مطلوبة')
+    .isLength({ min: 6, max: 128 })
+    .withMessage('كلمة المرور من ٦ أحرف على الأقل'),
+  body('fullName').optional().trim().isLength({ max: 200 }),
+  body('role').trim().isIn(['admin', 'user']).withMessage('نوع المستخدم غير صالح'),
+  body('isActive').optional().trim(),
+];
+
+const userUpdateRules = [
+  body('fullName').optional().trim().isLength({ max: 200 }),
+  body('role').trim().isIn(['admin', 'user']).withMessage('نوع المستخدم غير صالح'),
+  body('isActive').optional().trim(),
+  body('password')
+    .optional({ values: 'falsy' })
+    .trim()
+    .isLength({ min: 6, max: 128 })
+    .withMessage('كلمة المرور الجديدة من ٦ إلى ١٢٨ حرفاً'),
+];
+
 module.exports = {
   loginRules,
   itemRules,
@@ -66,4 +96,6 @@ module.exports = {
   quoteCustomerValidators,
   saleValidators,
   stockAdditionRules,
+  userCreateRules,
+  userUpdateRules,
 };

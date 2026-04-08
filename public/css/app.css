@@ -1051,6 +1051,63 @@ code {
   color: var(--accent);
 }
 
+.badge--muted {
+  margin-inline-start: 0.35rem;
+  font-size: 0.7rem;
+  background: rgba(0, 0, 0, 0.06);
+  color: var(--text-muted, #64748b);
+}
+
+.form__grid--2 {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.85rem 1rem;
+  align-items: start;
+}
+
+.form__grid--2 > * {
+  min-width: 0;
+}
+
+.form__field-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.form__hint--after-grid {
+  margin: -0.15rem 0 0.35rem;
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+@media (max-width: 640px) {
+  .form__grid--2 {
+    grid-template-columns: 1fr;
+  }
+}
+
+.btn--danger {
+  background: var(--danger-soft);
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.btn--danger:hover {
+  background: var(--danger);
+  color: #fff;
+  border-color: var(--danger);
+}
+
+.panel--danger-zone {
+  border-color: rgba(180, 83, 83, 0.35);
+  background: linear-gradient(180deg, #fff 0%, var(--danger-soft) 120%);
+}
+
+.nowrap {
+  white-space: nowrap;
+}
+
 .logo-preview {
   margin: 0.5rem 0;
 }

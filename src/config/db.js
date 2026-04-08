@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 const InventoryItem = require('../models/InventoryItem');
 const Sale = require('../models/Sale');
 const StockAddition = require('../models/StockAddition');
+const User = require('../models/User');
 
 async function connectDb() {
   const uri = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/deuof_light';
@@ -10,6 +11,7 @@ async function connectDb() {
   await InventoryItem.syncIndexes();
   await Sale.syncIndexes();
   await StockAddition.syncIndexes();
+  await User.syncIndexes();
 }
 
 module.exports = { connectDb };

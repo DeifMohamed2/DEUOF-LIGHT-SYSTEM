@@ -1,0 +1,174 @@
+<% if (mode === 'list') { %>
+<div class="page-head page-head--split">
+  <div>
+    <h1 class="page-title">المستخدمون</h1>
+    <p class="muted">إدارة حسابات الدخول — للمدير فقط. لا تُعرض كلمات المرور.</p>
+  </div>
+</div>
+
+<div class="panel">
+  <h2 class="form__section-title">إضافة مستخدم</h2>
+  <form class="form form--users-create" method="post" action="/users" autocomplete="off">
+    <div class="form__grid form__grid--2">
+      <div class="form__field-stack">
+        <label class="form__label" for="new-username">اسم المستخدم</label>
+        <input class="form__input" id="new-username" name="username" required maxlength="64" pattern="[a-zA-Z0-9._-]+" placeholder="مثال: ahmed" autocomplete="username">
+      </div>
+      <div class="form__field-stack">
+        <label class="form__label" for="new-password">كلمة المرور</label>
+        <input class="form__input" id="new-password" name="password" type="password" required minlength="6" maxlength="128" autocomplete="new-password">
+      </div>
+    </div>
+    <p class="muted form__hint--after-grid" dir="rtl">أحرف إنجليزية وأرقام والرموز <span dir="ltr">. _ -</span> فقط.</p>
+    <label class="form__label" for="new-fullname">الاسم الكامل (للعرض)</label>
+    <input class="form__input" id="new-fullname" name="fullName" maxlength="200">
+
+    <div class="form__grid form__grid--2">
+      <div class="form__field-stack">
+        <label class="form__label" for="new-role">الصلاحية</label>
+        <select class="form__input" id="new-role" name="role" required>
+          <option value="user">موظف</option>
+          <option value="admin">مدير</option>
+        </select>
+      </div>
+      <div class="form__field-stack">
+        <label class="form__label" for="new-active">الحالة</label>
+        <select class="form__input" id="new-active" name="isActive" required>
+          <option value="1" selected>نشط — يمكنه تسجيل الدخول</option>
+          <option value="0">موقوف</option>
+        </select>
+      </div>
+    </div>
+    <div class="form__actions">
+      <button type="submit" class="btn btn--primary">إنشاء المستخدم</button>
+    </div>
+  </form>
+</div>
+
+<div class="panel">
+  <h2 class="form__section-title">كل المستخدمين</h2>
+  <% if (!users.length) { %>
+  <p class="muted">لا يوجد مستخدمون.</p>
+  <% } else { %>
+  <div class="table-wrap">
+  <table class="table">
+    <thead>
+      <tr>
+        <th>اسم المستخدم</th>
+        <th>الاسم</th>
+        <th>الصلاحية</th>
+        <th>الحالة</th>
+        <th>عروض أسعار</th>
+        <th>مبيعات</th>
+        <th>أُنشئ</th>
+        <th>آخر تحديث</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      <% users.forEach(function (u) { %>
+      <tr>
+        <td>
+          <code><%= u.username %></code>
+          <% if (String(u._id) === String(currentSessionUserId)) { %>
+          <span class="badge badge--muted" title="حسابك الحالي">أنت</span>
+          <% } %>
+        </td>
+        <td><%= u.fullName && String(u.fullName).trim() ? u.fullName : '—' %></td>
+        <td><%= u.role === 'admin' ? 'مدير' : 'موظف' %></td>
+        <td><%= u.isActive ? 'نشط' : 'موقوف' %></td>
+        <td><%= u.quotesCount %></td>
+        <td><%= u.salesCount %></td>
+        <td class="muted nowrap"><%= new Date(u.createdAt).toLocaleString('ar-EG') %></td>
+        <td class="muted nowrap"><%= new Date(u.updatedAt).toLocaleString('ar-EG') %></td>
+        <td><a class="link" href="/users/<%= u._id %>">تفاصيل وتعديل</a></td>
+      </tr>
+      <% }) %>
+    </tbody>
+  </table>
+  </div>
+  <% } %>
+</div>
+
+<% } else if (mode === 'show' && user) { %>
+<div class="page-head page-head--split">
+  <div>
+    <h1 class="page-title">مستخدم: <%= user.username %></h1>
+    <p class="muted">عرض كامل للبيانات — تعديل أو حذف (حسب الصلاحيات أدناه)</p>
+  </div>
+  <a href="/users" class="link">رجوع للقائمة</a>
+</div>
+
+<div class="panel">
+  <h2 class="form__section-title">البيانات المحفوظة</h2>
+  <dl class="meta-list meta-list--users">
+    <dt>معرّف السجل</dt>
+    <dd><code><%= user._id %></code></dd>
+    <dt>اسم المستخدم</dt>
+    <dd><code><%= user.username %></code> (ثابت — لا يُغيّر)</dd>
+    <dt>الاسم الكامل</dt>
+    <dd><%= user.fullName && String(user.fullName).trim() ? user.fullName : '—' %></dd>
+    <dt>الصلاحية</dt>
+    <dd><%= user.role === 'admin' ? 'مدير' : 'موظف' %></dd>
+    <dt>الحالة</dt>
+    <dd><%= user.isActive ? 'نشط' : 'موقوف' %></dd>
+    <dt>كلمة المرور</dt>
+    <dd class="muted">مخزّنة مشفّرة — لا تُعرض. استخدم الحقل أدناه لتغييرها.</dd>
+    <dt>عروض أسعار أنشأها</dt>
+    <dd><%= user.quotesCount %></dd>
+    <dt>مبيعات سجّلها</dt>
+    <dd><%= user.salesCount %></dd>
+    <dt>تاريخ الإنشاء</dt>
+    <dd><%= new Date(user.createdAt).toLocaleString('ar-EG') %></dd>
+    <dt>آخر تحديث</dt>
+    <dd><%= new Date(user.updatedAt).toLocaleString('ar-EG') %></dd>
+  </dl>
+</div>
+
+<div class="panel">
+  <h2 class="form__section-title">تعديل</h2>
+  <form class="form" method="post" action="/users/<%= user._id %>" autocomplete="off">
+    <label class="form__label" for="edit-fullname">الاسم الكامل</label>
+    <input class="form__input" id="edit-fullname" name="fullName" value="<%= user.fullName || '' %>" maxlength="200">
+
+    <div class="form__grid form__grid--2">
+      <div class="form__field-stack">
+        <label class="form__label" for="edit-role">الصلاحية</label>
+        <select class="form__input" id="edit-role" name="role" required>
+          <option value="user" <%= user.role === 'user' ? 'selected' : '' %>>موظف</option>
+          <option value="admin" <%= user.role === 'admin' ? 'selected' : '' %>>مدير</option>
+        </select>
+      </div>
+      <div class="form__field-stack">
+        <label class="form__label" for="edit-active">الحالة</label>
+        <select class="form__input" id="edit-active" name="isActive" required>
+          <option value="1" <%= user.isActive ? 'selected' : '' %>>نشط</option>
+          <option value="0" <%= !user.isActive ? 'selected' : '' %>>موقوف</option>
+        </select>
+      </div>
+    </div>
+
+    <label class="form__label" for="edit-password">كلمة مرور جديدة (اختياري)</label>
+    <input class="form__input" id="edit-password" name="password" type="password" minlength="6" maxlength="128" autocomplete="new-password" placeholder="اتركه فارغاً إن لم ترد التغيير">
+    <div class="form__actions">
+      <button type="submit" class="btn btn--primary">حفظ التعديلات</button>
+    </div>
+  </form>
+</div>
+
+<% var isSelf = String(user._id) === String(currentSessionUserId); %>
+<% if (!isSelf) { %>
+<div class="panel panel--danger-zone">
+  <h2 class="form__section-title">حذف المستخدم</h2>
+  <p class="muted">يُحذف الحساب نهائياً. لا يمكن التراجع. لن يُحذف سجل العروض أو المبيعات المرتبطة بمعرّفه التاريخي إن وُجدت في النظام.</p>
+  <form method="post" action="/users/<%= user._id %>/delete" onsubmit="return confirm('تأكيد حذف المستخدم <%= user.username %>؟');">
+    <button type="submit" class="btn btn--danger">حذف المستخدم</button>
+  </form>
+</div>
+<% } else { %>
+<div class="panel">
+  <p class="muted">لا يمكنك حذف حسابك الحالي من هنا. يمكن لمدير آخر حذفك أو يمكنك تعطيل حسابات الآخرين فقط.</p>
+</div>
+<% } %>
+
+<% } %>
