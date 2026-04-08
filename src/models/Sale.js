@@ -23,6 +23,8 @@ const saleSchema = new mongoose.Schema(
     subtotal: { type: Number, min: 0, default: 0 },
     vat14Applied: { type: Boolean, default: false },
     vat14Amount: { type: Number, min: 0, default: 0 },
+    noticeDiscountApplied: { type: Boolean, default: false },
+    noticeDiscountAmount: { type: Number, min: 0, default: 0 },
     total: { type: Number, required: true, min: 0 },
     soldAt: { type: Date, default: Date.now },
     paymentNote: { type: String, default: '' },

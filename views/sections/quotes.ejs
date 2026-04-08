@@ -152,7 +152,10 @@
       <input type="checkbox" name="vat14" id="quote-stock-vat14" value="1">
       <span>أضف ١٤٪ ضريبة قيمة مضافة على إجمالي البنود</span>
     </label>
-    <p class="muted form__hint" id="stock-quote-vat-add-hint" hidden>عند التفعيل يُخفى تنبيه «الأسعار تشمل الضريبة» ويُضاف ١٤٪ على مجموع الأسطر في الإجمالي النهائي (كما في المبيعات).</p>
+    <label class="form__check-row">
+      <input type="checkbox" name="noticeDiscount" id="quote-stock-notice-discount" value="1">
+      <span>خصم ١٪ إشعار من مجموع البنود (قبل الضريبة)</span>
+    </label>
     <h3 class="form__section-title">الأسطر</h3>
     <div class="form__stock-tools">
       <button type="button" class="btn btn--sm" id="stock-add-manual">+ إضافة سطر يدوي</button>
@@ -176,6 +179,7 @@
     <div class="stock-quote-totals" id="stock-quote-totals-wrap" hidden>
       <div class="sale-totals-preview sale-totals-preview--rtl">
         <p class="total-line muted" id="stock-line-vat" hidden>ضريبة القيمة المضافة (١٤٪): <strong id="stock-tv-vat">0.00</strong> ج.م</p>
+        <p class="total-line muted" id="stock-line-notice" hidden>خصم ١٪ إشعار: <strong id="stock-tv-notice">0.00</strong> ج.م</p>
         <p class="total-line total-line--stock-preview"><span id="stock-tv-final-label">الإجمالي</span>: <strong id="stock-tv-final">0.00</strong> ج.م</p>
       </div>
       <p class="muted stock-quote-totals-hint">بعد الحفظ يظهر المجموع في صفحة العرض وPDF وExcel.</p>
@@ -193,7 +197,9 @@
   var hidden = document.getElementById('linesJsonStock');
   var btnManual = document.getElementById('stock-add-manual');
   var vatCb = document.getElementById('quote-stock-vat14');
+  var noticeCb = document.getElementById('quote-stock-notice-discount');
   var VAT = 0.14;
+  var NOTICE_DISCOUNT = 0.01;
   if (!body || !form || !hidden) return;
   function esc(s) {
     return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
@@ -212,11 +218,9 @@
   }
   function toggleStockVatHints() {
     var inclusive = document.getElementById('stock-quote-vat-inclusive-hint');
-    var addHint = document.getElementById('stock-quote-vat-add-hint');
     if (!inclusive) return;
     var on = vatCb && vatCb.checked;
     inclusive.hidden = !!on;
-    if (addHint) addHint.hidden = !on;
   }
   function refreshStockGrandTotal() {
     var rows = body.querySelectorAll('tr');
@@ -229,25 +233,32 @@
     sum = Math.round(sum * 100) / 100;
     var wrap = document.getElementById('stock-quote-totals-wrap');
     var lineVat = document.getElementById('stock-line-vat');
+    var lineNotice = document.getElementById('stock-line-notice');
     var tvVat = document.getElementById('stock-tv-vat');
+    var tvNotice = document.getElementById('stock-tv-notice');
     var tvFinal = document.getElementById('stock-tv-final');
     var tvLabel = document.getElementById('stock-tv-final-label');
     if (wrap) wrap.hidden = rows.length === 0;
     var vatOn = vatCb && vatCb.checked;
-    if (vatOn) {
-      if (lineVat) lineVat.hidden = false;
-      var vatAmt = Math.round(sum * VAT * 100) / 100;
-      if (tvVat) tvVat.textContent = fmtMoney(vatAmt);
-      if (tvFinal) tvFinal.textContent = fmtMoney(sum + vatAmt);
-      if (tvLabel) tvLabel.textContent = 'الإجمالي النهائي';
-    } else {
-      if (lineVat) lineVat.hidden = true;
-      if (tvFinal) tvFinal.textContent = fmtMoney(sum);
-      if (tvLabel) tvLabel.textContent = 'الإجمالي';
-    }
+    var noticeOn = noticeCb && noticeCb.checked;
+    var vatAmt = vatOn ? Math.round(sum * VAT * 100) / 100 : 0;
+    var noticeAmt = noticeOn ? Math.round(sum * NOTICE_DISCOUNT * 100) / 100 : 0;
+    var finalVal = Math.max(0, Math.round((sum + vatAmt - noticeAmt) * 100) / 100);
+    if (lineVat) lineVat.hidden = !vatOn;
+    if (tvVat) tvVat.textContent = fmtMoney(vatAmt);
+    if (lineNotice) lineNotice.hidden = !noticeOn;
+    if (tvNotice) tvNotice.textContent = fmtMoney(noticeAmt);
+    if (tvFinal) tvFinal.textContent = fmtMoney(finalVal);
+    if (tvLabel) tvLabel.textContent = vatOn || noticeOn ? 'الإجمالي النهائي' : 'الإجمالي';
   }
   if (vatCb) {
     vatCb.addEventListener('change', function () {
+      toggleStockVatHints();
+      refreshStockGrandTotal();
+    });
+  }
+  if (noticeCb) {
+    noticeCb.addEventListener('change', function () {
       toggleStockVatHints();
       refreshStockGrandTotal();
     });
@@ -365,8 +376,12 @@
   <% if (quote.type === 'from_stock' && !quote.vat14Applied) { %>
   <div class="search-hint priced-quote-hint priced-quote-hint--small" dir="ltr"><span class="priced-quote-hint__star"><%= pricedQuoteVatNotePrefix %></span><span dir="rtl"><strong>تنبيه:</strong> <%= pricedQuoteVatNote %></span></div>
   <% } %>
-  <% if (quote.type === 'from_stock' && quote.vat14Applied) { %>
+  <% if (quote.type === 'from_stock' && quote.vat14Applied && quote.noticeDiscountApplied) { %>
+  <p class="muted search-hint priced-quote-hint--small">يُضاف ١٤٪ ضريبة على مجموع البنود ويُخصم خصم ١٪ إشعار من المجموع (مدرج في الإجمالي النهائي).</p>
+  <% } else if (quote.type === 'from_stock' && quote.vat14Applied) { %>
   <p class="muted search-hint priced-quote-hint--small">يُضاف ١٤٪ ضريبة قيمة مضافة على مجموع البنود (مدرج في الإجمالي النهائي).</p>
+  <% } else if (quote.type === 'from_stock' && quote.noticeDiscountApplied) { %>
+  <p class="muted search-hint priced-quote-hint--small">يُخصم خصم ١٪ إشعار من مجموع البنود (مدرج في الإجمالي النهائي).</p>
   <% } %>
   <div class="table-wrap">
   <table class="table">
@@ -394,9 +409,15 @@
   </table>
   </div>
   <% if (quote.type === 'from_stock') { %>
-    <% if (quote.vat14Applied) { %>
+    <% var quoteHasAdj = quote.vat14Applied || quote.noticeDiscountApplied; %>
+    <% if (quoteHasAdj) { %>
     <div class="sale-totals-preview sale-totals-preview--rtl">
+      <% if (quote.vat14Applied) { %>
       <p class="total-line muted">ضريبة القيمة المضافة (١٤٪): <strong><%= Number(quote.vat14Amount || 0).toFixed(2) %></strong> ج.م</p>
+      <% } %>
+      <% if (quote.noticeDiscountApplied) { %>
+      <p class="total-line muted">خصم ١٪ إشعار: <strong><%= Number(quote.noticeDiscountAmount || 0).toFixed(2) %></strong> ج.م</p>
+      <% } %>
       <p class="total-line"><strong>الإجمالي النهائي:</strong> <%= Number(quote.total).toFixed(2) %> ج.م</p>
     </div>
     <% } else { %>

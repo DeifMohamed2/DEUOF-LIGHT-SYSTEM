@@ -102,6 +102,10 @@
       <input type="checkbox" name="vat14" id="sale-vat14" value="1">
       <span>أضف ١٤٪ ضريبة قيمة مضافة على إجمالي البنود</span>
     </label>
+    <label class="form__check-row">
+      <input type="checkbox" name="noticeDiscount" id="sale-notice-discount" value="1">
+      <span>خصم ١٪ إشعار من مجموع البنود (قبل الضريبة)</span>
+    </label>
 
     <h3 class="form__section-title">بنود المبيعة</h3>
     <div class="form__stock-tools">
@@ -126,6 +130,7 @@
     </div>
     <div id="sale-totals-wrap" class="sale-totals-preview sale-totals-preview--rtl" hidden>
       <p class="total-line sale-totals-preview__vat muted" id="sale-line-vat" hidden>ضريبة القيمة المضافة (١٤٪): <strong id="tv-vat">0.00</strong> ج.م</p>
+      <p class="total-line sale-totals-preview__vat muted" id="sale-line-notice" hidden>خصم ١٪ إشعار: <strong id="tv-notice">0.00</strong> ج.م</p>
       <p class="total-line sale-totals-preview__final"><span id="tv-final-label">الإجمالي</span>: <strong id="tv-final">0.00</strong> ج.م</p>
     </div>
     <div class="form__actions">
@@ -141,12 +146,16 @@
   var hidden = document.getElementById('linesJson');
   var totalsWrap = document.getElementById('sale-totals-wrap');
   var lineVat = document.getElementById('sale-line-vat');
+  var lineNotice = document.getElementById('sale-line-notice');
   var tvVat = document.getElementById('tv-vat');
+  var tvNotice = document.getElementById('tv-notice');
   var tvFinal = document.getElementById('tv-final');
   var tvFinalLabel = document.getElementById('tv-final-label');
   var vatCb = document.getElementById('sale-vat14');
+  var noticeCb = document.getElementById('sale-notice-discount');
   var btnManual = document.getElementById('sale-add-manual');
   var VAT = 0.14;
+  var NOTICE_DISCOUNT = 0.01;
   if (!body || !form || !hidden) return;
   function recalc() {
     var sum = 0;
@@ -162,19 +171,19 @@
     totalsWrap.hidden = !hasRows;
     if (!hasRows) return;
     var vatOn = vatCb && vatCb.checked;
-    if (vatOn) {
-      lineVat.hidden = false;
-      var vatAmt = Math.round(sum * VAT * 100) / 100;
-      tvVat.textContent = vatAmt.toFixed(2);
-      tvFinal.textContent = (Math.round((sum + vatAmt) * 100) / 100).toFixed(2);
-      tvFinalLabel.textContent = 'الإجمالي النهائي';
-    } else {
-      lineVat.hidden = true;
-      tvFinal.textContent = sum.toFixed(2);
-      tvFinalLabel.textContent = 'الإجمالي';
-    }
+    var noticeOn = noticeCb && noticeCb.checked;
+    var vatAmt = vatOn ? Math.round(sum * VAT * 100) / 100 : 0;
+    var noticeAmt = noticeOn ? Math.round(sum * NOTICE_DISCOUNT * 100) / 100 : 0;
+    var finalVal = Math.max(0, Math.round((sum + vatAmt - noticeAmt) * 100) / 100);
+    if (lineVat) lineVat.hidden = !vatOn;
+    if (tvVat) tvVat.textContent = vatAmt.toFixed(2);
+    if (lineNotice) lineNotice.hidden = !noticeOn;
+    if (tvNotice) tvNotice.textContent = noticeAmt.toFixed(2);
+    if (tvFinal) tvFinal.textContent = finalVal.toFixed(2);
+    if (tvFinalLabel) tvFinalLabel.textContent = vatOn || noticeOn ? 'الإجمالي النهائي' : 'الإجمالي';
   }
   if (vatCb) vatCb.addEventListener('change', recalc);
+  if (noticeCb) noticeCb.addEventListener('change', recalc);
   function esc(s) {
     return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
   }
@@ -275,6 +284,8 @@
   </div>
 </div>
 <% var vatAppliedDetail = sale.vat14Applied === true; %>
+<% var noticeAppliedDetail = sale.noticeDiscountApplied === true; %>
+<% var saleHasAdjDetail = vatAppliedDetail || noticeAppliedDetail; %>
 <div class="panel">
   <dl class="meta-list">
     <dt>اسم العميل</dt><dd><%= sale.customerName && String(sale.customerName).trim() ? sale.customerName : '—' %></dd>
@@ -284,6 +295,11 @@
     <dt>التاريخ</dt><dd><%= new Date(sale.soldAt).toLocaleString('ar-EG') %></dd>
     <% if (vatAppliedDetail) { %>
     <dt>ضريبة القيمة المضافة (١٤٪)</dt><dd><%= Number(sale.vat14Amount || 0).toFixed(2) %> ج.م</dd>
+    <% } %>
+    <% if (noticeAppliedDetail) { %>
+    <dt>خصم ١٪ إشعار</dt><dd><%= Number(sale.noticeDiscountAmount || 0).toFixed(2) %> ج.م</dd>
+    <% } %>
+    <% if (saleHasAdjDetail) { %>
     <dt>الإجمالي النهائي</dt><dd><strong><%= Number(sale.total).toFixed(2) %> ج.م</strong></dd>
     <% } else { %>
     <dt>الإجمالي</dt><dd><strong><%= Number(sale.total).toFixed(2) %> ج.م</strong></dd>

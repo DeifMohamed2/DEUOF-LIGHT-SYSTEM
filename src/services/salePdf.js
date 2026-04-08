@@ -69,7 +69,10 @@ async function renderSalePdfHtml(sale) {
   });
 
   const vatApplied = Boolean(sale.vat14Applied);
+  const noticeApplied = Boolean(sale.noticeDiscountApplied);
   const vatAmount = vatApplied && sale.vat14Amount != null ? Number(sale.vat14Amount) : 0;
+  const noticeAmount =
+    noticeApplied && sale.noticeDiscountAmount != null ? Number(sale.noticeDiscountAmount) : 0;
   const grandTotal = Number(sale.total);
 
   const rows = sale.lines
@@ -84,9 +87,21 @@ async function renderSalePdfHtml(sale) {
     )
     .join('');
 
-  const totalsBlock = vatApplied
+  const saleExtraLines = [];
+  if (vatApplied) {
+    saleExtraLines.push(
+      `<p><strong>ضريبة القيمة المضافة (١٤٪):</strong> ${vatAmount.toFixed(2)} ج.م</p>`
+    );
+  }
+  if (noticeApplied) {
+    saleExtraLines.push(
+      `<p><strong>خصم ١٪ إشعار:</strong> ${noticeAmount.toFixed(2)} ج.م</p>`
+    );
+  }
+  const saleHasExtras = saleExtraLines.length > 0;
+  const totalsBlock = saleHasExtras
     ? `<div class="totals-block">
-        <p><strong>ضريبة القيمة المضافة (١٤٪):</strong> ${vatAmount.toFixed(2)} ج.م</p>
+        ${saleExtraLines.join('')}
         <p class="grand-total"><strong>الإجمالي النهائي:</strong> ${grandTotal.toFixed(2)} ج.م</p>
       </div>`
     : `<div class="totals-block"><p class="grand-total"><strong>الإجمالي:</strong> ${grandTotal.toFixed(2)} ج.م</p></div>`;

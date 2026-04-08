@@ -20,6 +20,8 @@ const quoteSchema = new mongoose.Schema(
     subtotal: { type: Number, default: 0 },
     vat14Applied: { type: Boolean, default: false },
     vat14Amount: { type: Number, default: 0 },
+    noticeDiscountApplied: { type: Boolean, default: false },
+    noticeDiscountAmount: { type: Number, default: 0 },
     total: { type: Number, default: 0 },
     notes: { type: String, trim: true, default: '' },
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },

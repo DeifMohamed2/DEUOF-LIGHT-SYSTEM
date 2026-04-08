@@ -14,6 +14,8 @@ const { quoteToWorkbook } = require('../services/quoteExcel');
 const { SALE_PAYMENT_METHODS, salePaymentLabel } = require('../constants/salePayment');
 
 const SALE_VAT_RATE = 0.14;
+/** خصم ١٪ إشعار — من المجموع قبل الضريبة، بنفس أساس احتساب الـ ١٤٪ */
+const NOTICE_DISCOUNT_RATE = 0.01;
 
 const INV_PAGE = 15;
 const SALE_PAGE = 20;
@@ -21,6 +23,28 @@ const QUOTE_LIMIT = 20;
 
 function shell(locals) {
   return { layout: 'layouts/app', ...locals };
+}
+
+function parseVat14AndNoticeDiscount(body) {
+  const vat14Applied =
+    body.vat14 === 'on' || body.vat14 === '1' || body.vat14 === 'true';
+  const noticeDiscountApplied =
+    body.noticeDiscount === 'on' ||
+    body.noticeDiscount === '1' ||
+    body.noticeDiscount === 'true';
+  return { vat14Applied, noticeDiscountApplied };
+}
+
+function computeSubtotalAdjustments(subtotal, vat14Applied, noticeDiscountApplied) {
+  const vat14Amount = vat14Applied ? Math.round(subtotal * SALE_VAT_RATE * 100) / 100 : 0;
+  const noticeDiscountAmount = noticeDiscountApplied
+    ? Math.round(subtotal * NOTICE_DISCOUNT_RATE * 100) / 100
+    : 0;
+  const finalTotal = Math.max(
+    0,
+    Math.round((subtotal + vat14Amount - noticeDiscountAmount) * 100) / 100
+  );
+  return { vat14Amount, noticeDiscountAmount, finalTotal };
 }
 
 async function dashboard(req, res) {
@@ -552,9 +576,12 @@ async function quotesCreateFromStock(req, res) {
     return { ...l, itemCode: l.itemCode || '' };
   });
   const subtotal = Math.round(lineSum * 100) / 100;
-  const vat14Applied = req.body.vat14 === 'on' || req.body.vat14 === '1' || req.body.vat14 === 'true';
-  const vat14Amount = vat14Applied ? Math.round(subtotal * SALE_VAT_RATE * 100) / 100 : 0;
-  const finalTotal = Math.round((subtotal + vat14Amount) * 100) / 100;
+  const { vat14Applied, noticeDiscountApplied } = parseVat14AndNoticeDiscount(req.body);
+  const { vat14Amount, noticeDiscountAmount, finalTotal } = computeSubtotalAdjustments(
+    subtotal,
+    vat14Applied,
+    noticeDiscountApplied
+  );
   await Quote.create({
     type: 'from_stock',
     customerName: req.body.customerName.trim(),
@@ -563,6 +590,8 @@ async function quotesCreateFromStock(req, res) {
     subtotal,
     vat14Applied,
     vat14Amount,
+    noticeDiscountApplied,
+    noticeDiscountAmount,
     total: finalTotal,
     notes: (req.body.notes || '').trim(),
     createdBy: req.session.userId,
@@ -814,9 +843,12 @@ async function salesCreate(req, res) {
       }
     }
     const subtotal = Math.round(total * 100) / 100;
-    const vat14Applied = req.body.vat14 === 'on' || req.body.vat14 === '1' || req.body.vat14 === 'true';
-    const vat14Amount = vat14Applied ? Math.round(subtotal * SALE_VAT_RATE * 100) / 100 : 0;
-    const finalTotal = Math.round((subtotal + vat14Amount) * 100) / 100;
+    const { vat14Applied, noticeDiscountApplied } = parseVat14AndNoticeDiscount(req.body);
+    const { vat14Amount, noticeDiscountAmount, finalTotal } = computeSubtotalAdjustments(
+      subtotal,
+      vat14Applied,
+      noticeDiscountApplied
+    );
     await Sale.create({
       customerName: req.body.customerName.trim(),
       disbursementNumber: (req.body.disbursementNumber || '').trim(),
@@ -826,6 +858,8 @@ async function salesCreate(req, res) {
       subtotal,
       vat14Applied,
       vat14Amount,
+      noticeDiscountApplied,
+      noticeDiscountAmount,
       total: finalTotal,
       soldAt: new Date(),
       paymentNote: (req.body.paymentNote || '').trim(),

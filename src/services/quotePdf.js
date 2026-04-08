@@ -107,14 +107,32 @@ async function renderQuotePdfHtml(quote) {
       : '';
 
   const quoteVatApplied = showPrice && Boolean(quote.vat14Applied);
+  const quoteNoticeApplied = showPrice && Boolean(quote.noticeDiscountApplied);
   const quoteVatAmount =
     quoteVatApplied && quote.vat14Amount != null ? Number(quote.vat14Amount) : 0;
+  const quoteNoticeAmount =
+    quoteNoticeApplied && quote.noticeDiscountAmount != null
+      ? Number(quote.noticeDiscountAmount)
+      : 0;
+
+  const totalExtraLines = [];
+  if (quoteVatApplied) {
+    totalExtraLines.push(
+      `<p><strong>ضريبة القيمة المضافة (١٤٪):</strong> ${quoteVatAmount.toFixed(2)} ج.م</p>`
+    );
+  }
+  if (quoteNoticeApplied) {
+    totalExtraLines.push(
+      `<p><strong>خصم ١٪ إشعار:</strong> ${quoteNoticeAmount.toFixed(2)} ج.م</p>`
+    );
+  }
+  const hasPriceExtras = totalExtraLines.length > 0;
 
   const totalBlock =
     showPrice && quote.total != null
-      ? quoteVatApplied
+      ? hasPriceExtras
         ? `<div class="quote-totals-block">
-        <p><strong>ضريبة القيمة المضافة (١٤٪):</strong> ${quoteVatAmount.toFixed(2)} ج.م</p>
+        ${totalExtraLines.join('')}
         <p class="grand-total grand-total--quote-vat"><strong>الإجمالي النهائي:</strong> ${Number(quote.total).toFixed(2)} ج.م</p>
       </div>`
         : `<p class="grand-total"><strong>الإجمالي:</strong> ${Number(quote.total).toFixed(2)} ج.م</p>`
