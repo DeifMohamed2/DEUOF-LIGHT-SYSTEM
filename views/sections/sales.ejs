@@ -1,0 +1,199 @@
+<% if (mode === 'list') { %>
+<div class="page-head page-head--split">
+  <div>
+    <h1 class="page-title">المبيعات</h1>
+    <p class="muted"><%= isAdmin ? 'كل المبيعات' : 'مبيعاتك المسجلة' %></p>
+  </div>
+  <a href="/sales/new" class="btn btn--primary">تسجيل مبيعة</a>
+</div>
+
+<% if (!sales.length) { %>
+  <div class="panel empty">لا توجد مبيعات.</div>
+<% } else { %>
+<div class="table-wrap">
+<table class="table">
+  <thead>
+    <tr>
+      <th>التاريخ</th>
+      <th>الإجمالي (ج.م)</th>
+      <% if (isAdmin) { %><th>المستخدم</th><% } %>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    <% sales.forEach(function (s) { %>
+    <tr>
+      <td><%= new Date(s.soldAt).toLocaleString('ar-EG') %></td>
+      <td><%= Number(s.total).toFixed(2) %> ج.م</td>
+      <% if (isAdmin) { %>
+      <td><%= s.createdBy && (s.createdBy.fullName || s.createdBy.username) || '—' %></td>
+      <% } %>
+      <td><a class="link" href="/sales/<%= s._id %>">تفاصيل</a></td>
+    </tr>
+    <% }) %>
+  </tbody>
+</table>
+</div>
+<div class="pagination">
+  <% if (page > 1) { %>
+  <a class="btn btn--sm" href="?page=<%= page - 1 %>">السابق</a>
+  <% } %>
+  <span class="muted">صفحة <%= page %> من <%= totalPages %></span>
+  <% if (page < totalPages) { %>
+  <a class="btn btn--sm" href="?page=<%= page + 1 %>">التالي</a>
+  <% } %>
+</div>
+<% } %>
+
+<% } else if (mode === 'new') { %>
+<div class="page-head">
+  <h1 class="page-title">تسجيل مبيعة</h1>
+  <a href="/sales" class="link">رجوع</a>
+</div>
+<div class="panel">
+  <p class="muted">ابحث بالكود أو الاسم أو البند، ثم اختر صنفاً من القائمة لإضافته إلى الجدول. يمكنك إضافة أي عدد من الأصناف.</p>
+  <div class="inventory-picker">
+    <div class="inventory-picker__row">
+      <input type="search" id="sale-search" class="form__input form__input--search inventory-picker__input" placeholder="ابحث في المخزن (كود أو اسم أو بند)…" autocomplete="off" aria-autocomplete="list" aria-controls="sale-pick-results">
+      <button type="button" class="btn btn--ghost btn--sm inventory-picker__clear" id="sale-search-clear" aria-label="مسح البحث">مسح</button>
+    </div>
+    <div id="sale-pick-results" class="pick-results" role="listbox" aria-label="نتائج البحث في المخزن"></div>
+  </div>
+  <form class="form" method="post" action="/sales" id="sale-form">
+    <input type="hidden" name="linesJson" id="linesJson">
+    <label class="form__label">ملاحظة دفع (اختياري)</label>
+    <input class="form__input" name="paymentNote">
+    <h3 class="form__section-title">بنود المبيعة</h3>
+    <div class="table-wrap">
+    <table class="table table--compact">
+      <thead>
+        <tr>
+          <th>الكود</th>
+          <th>الاسم</th>
+          <th>الكمية</th>
+          <th>سعر الوحدة (ج.م)</th>
+          <th>الإجمالي (ج.م)</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="lines-body"></tbody>
+    </table>
+    </div>
+    <p class="total-line" id="grand-total" hidden>الإجمالي: <strong>0.00 ج.م</strong></p>
+    <div class="form__actions">
+      <button type="submit" class="btn btn--primary">تأكيد المبيعة</button>
+    </div>
+  </form>
+</div>
+<script src="/js/inventorySearchPicker.js"></script>
+<script>
+(function () {
+  var body = document.getElementById('lines-body');
+  var form = document.getElementById('sale-form');
+  var hidden = document.getElementById('linesJson');
+  var grand = document.getElementById('grand-total');
+  if (!body || !form || !hidden) return;
+  function recalc() {
+    var sum = 0;
+    Array.prototype.forEach.call(body.querySelectorAll('tr'), function (tr) {
+      var q = Number(tr.querySelector('[data-f=quantity]').value) || 0;
+      var p = Number(tr.querySelector('[data-f=unitPrice]').value) || 0;
+      sum += q * p;
+      var lt = tr.querySelector('[data-f=lineTotal]');
+      if (lt) lt.textContent = (q * p).toFixed(2) + ' ج.م';
+    });
+    grand.hidden = body.querySelectorAll('tr').length === 0;
+    grand.querySelector('strong').textContent = sum.toFixed(2) + ' ج.م';
+  }
+  function esc(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+  }
+  function addLine(item) {
+    var tr = document.createElement('tr');
+    tr.innerHTML =
+      '<td><code>' + esc(item.itemCode) + '</code><input type="hidden" data-f="inventoryItem" value="' + esc(item._id) + '"></td>' +
+      '<td>' + esc(item.name) + '</td>' +
+      '<td><input class="form__input" type="number" min="1" max="' + item.quantityOnHand + '" step="1" data-f="quantity" value="1" required></td>' +
+      '<td><input class="form__input" type="number" min="0" step="0.01" data-f="unitPrice" value="' + Number(item.unitPrice || 0).toFixed(2) + '" required></td>' +
+      '<td><span data-f="lineTotal">' + Number(item.unitPrice || 0).toFixed(2) + ' ج.م</span></td>' +
+      '<td><button type="button" class="link link--danger rm">حذف</button></td>';
+    tr.querySelector('.rm').onclick = function () { tr.remove(); recalc(); };
+    tr.querySelectorAll('[data-f=quantity], [data-f=unitPrice]').forEach(function (el) {
+      el.addEventListener('input', recalc);
+    });
+    body.appendChild(tr);
+    recalc();
+  }
+  function isDuplicateItem(item) {
+    var id = String(item._id);
+    var nodes = body.querySelectorAll('[data-f=inventoryItem]');
+    for (var i = 0; i < nodes.length; i++) {
+      if (nodes[i].value === id) return true;
+    }
+    return false;
+  }
+  if (window.InventorySearchPicker) {
+    window.InventorySearchPicker.attach({
+      searchId: 'sale-search',
+      resultsId: 'sale-pick-results',
+      clearButtonId: 'sale-search-clear',
+      debounceMs: 320,
+      minLen: 1,
+      isDuplicate: isDuplicateItem,
+      onSelect: function (x) {
+        addLine(x);
+      },
+    });
+  }
+  form.onsubmit = function () {
+    var rows = Array.prototype.slice.call(body.querySelectorAll('tr'));
+    var lines = rows.map(function (tr) {
+      return {
+        inventoryItem: tr.querySelector('[data-f=inventoryItem]').value,
+        quantity: Number(tr.querySelector('[data-f=quantity]').value),
+        unitPrice: Number(tr.querySelector('[data-f=unitPrice]').value)
+      };
+    });
+    hidden.value = JSON.stringify(lines);
+  };
+})();
+</script>
+
+<% } else if (mode === 'show' && sale) { %>
+<div class="page-head page-head--split">
+  <h1 class="page-title">تفاصيل المبيعة</h1>
+  <a href="/sales" class="link">رجوع</a>
+</div>
+<div class="panel">
+  <dl class="meta-list">
+    <dt>التاريخ</dt><dd><%= new Date(sale.soldAt).toLocaleString('ar-EG') %></dd>
+    <dt>الإجمالي</dt><dd><strong><%= Number(sale.total).toFixed(2) %> ج.م</strong></dd>
+    <dt>ملاحظة</dt><dd><%= sale.paymentNote || '—' %></dd>
+    <dt>سجلها</dt><dd><%= sale.createdBy && (sale.createdBy.fullName || sale.createdBy.username) || '—' %></dd>
+  </dl>
+  <div class="table-wrap">
+  <table class="table">
+    <thead>
+      <tr>
+        <th>الكود</th>
+        <th>الاسم</th>
+        <th>الكمية</th>
+        <th>سعر الوحدة (ج.م)</th>
+        <th>الإجمالي (ج.م)</th>
+      </tr>
+    </thead>
+    <tbody>
+      <% sale.lines.forEach(function (line) { %>
+      <tr>
+        <td><%= line.itemCode %></td>
+        <td><%= line.itemName %></td>
+        <td><%= line.quantity %></td>
+        <td><%= Number(line.unitPrice).toFixed(2) %> ج.م</td>
+        <td><%= Number(line.lineTotal).toFixed(2) %> ج.م</td>
+      </tr>
+      <% }) %>
+    </tbody>
+  </table>
+  </div>
+</div>
+<% } %>

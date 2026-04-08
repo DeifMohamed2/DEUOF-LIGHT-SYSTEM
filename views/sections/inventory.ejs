@@ -1,0 +1,157 @@
+<% if (mode === 'list') { %>
+<div class="page-head page-head--split">
+  <div>
+    <h1 class="page-title">المخزن</h1>
+    <p class="muted">بحث فوري في الأصناف</p>
+  </div>
+  <a href="/inventory/new" class="btn btn--primary">إضافة صنف</a>
+</div>
+
+<div class="toolbar">
+  <input type="search" id="live-search" class="form__input form__input--search" placeholder="ابحث بالكود أو الاسم أو البند..." value="<%= q || '' %>" autocomplete="off">
+  <form method="get" action="/inventory" class="toolbar__form">
+    <input type="hidden" name="q" id="filter-q" value="<%= q || '' %>">
+    <button type="submit" class="btn">تصفية القائمة</button>
+  </form>
+</div>
+<div id="search-hint" class="search-hint muted" hidden></div>
+
+<% if (items.length === 0) { %>
+  <div class="panel empty">لا توجد أصناف مطابقة.</div>
+<% } else { %>
+<div class="table-wrap">
+<table class="table">
+  <thead>
+    <tr>
+      <th>الكود</th>
+      <th>الاسم</th>
+      <th>البند</th>
+      <th>الكمية</th>
+      <th>سعر الوحدة (ج.م)</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    <% items.forEach(function (row) { %>
+    <tr>
+      <td><code><%= row.itemCode %></code></td>
+      <td><%= row.name %></td>
+      <td><%= row.band || '—' %></td>
+      <td><%= row.quantityOnHand %></td>
+      <td><%= Number(row.unitPrice).toFixed(2) %> ج.م</td>
+      <td class="table__actions">
+        <a href="/inventory/<%= row._id %>/edit" class="link">تعديل</a>
+        <% if (isAdmin) { %>
+        <form action="/inventory/<%= row._id %>/delete" method="post" class="inline-form" onsubmit="return confirm('حذف هذا الصنف؟');">
+          <button type="submit" class="link link--danger">حذف</button>
+        </form>
+        <% } %>
+      </td>
+    </tr>
+    <% }) %>
+  </tbody>
+</table>
+</div>
+
+<div class="pagination">
+  <% if (page > 1) { %>
+  <a class="btn btn--sm" href="/inventory?page=<%= page - 1 %><%= q ? '&q=' + encodeURIComponent(q) : '' %>">السابق</a>
+  <% } %>
+  <span class="muted">صفحة <%= page %> من <%= totalPages %></span>
+  <% if (page < totalPages) { %>
+  <a class="btn btn--sm" href="/inventory?page=<%= page + 1 %><%= q ? '&q=' + encodeURIComponent(q) : '' %>">التالي</a>
+  <% } %>
+</div>
+<% } %>
+
+<script>
+(function () {
+  var input = document.getElementById('live-search');
+  var hint = document.getElementById('search-hint');
+  var filterQ = document.getElementById('filter-q');
+  var t;
+  if (!input) return;
+  input.addEventListener('input', function () {
+    clearTimeout(t);
+    var q = input.value.trim();
+    if (filterQ) filterQ.value = q;
+    t = setTimeout(function () {
+      if (!q) { hint.hidden = true; hint.textContent = ''; return; }
+      fetch('/api/inventory/search?q=' + encodeURIComponent(q))
+        .then(function (r) { return r.json(); })
+        .then(function (rows) {
+          hint.hidden = false;
+          if (!rows.length) { hint.textContent = 'لا نتائج للبحث السريع.'; return; }
+          hint.textContent = rows.slice(0, 8).map(function (x) {
+            var b = x.band ? ' · بند: ' + x.band : '';
+            return x.itemCode + ' — ' + x.name + b + ' (متاح: ' + x.quantityOnHand + ')';
+          }).join(' · ');
+        })
+        .catch(function () { hint.hidden = true; });
+    }, 220);
+  });
+})();
+</script>
+
+<% } else { %>
+<div class="page-head page-head--split">
+  <div>
+    <h1 class="page-title"><%= mode === 'edit' ? 'تعديل صنف' : 'إضافة صنف' %></h1>
+    <p class="muted"><%= mode === 'edit' ? 'تحديث بيانات الصنف في المخزن' : 'أدخل بيانات الصنف الجديد أو أنشئ كوداً تلقائياً' %></p>
+  </div>
+  <a href="/inventory" class="btn btn--ghost">رجوع للمخزن</a>
+</div>
+
+<div class="panel panel--narrow panel--highlight">
+  <form class="form" method="post" action="<%= item && item._id ? '/inventory/' + item._id : '/inventory' %>">
+    <label class="form__label" for="inventory-item-code">كود الصنف</label>
+    <div class="form__input-row">
+      <input class="form__input" id="inventory-item-code" name="itemCode" required value="<%= item ? item.itemCode : '' %>" dir="ltr" autocomplete="off">
+      <button type="button" class="btn btn--secondary" id="inventory-gen-code" title="توليد كود عشوائي غير مكرر محلياً">إنشاء كود عشوائي</button>
+    </div>
+    <% if (errors && errors.itemCode) { %><span class="form__err"><%= errors.itemCode.msg %></span><% } %>
+
+    <label class="form__label">اسم الصنف</label>
+    <input class="form__input" name="name" required value="<%= item ? item.name : '' %>">
+
+    <label class="form__label" for="inventory-band">البند</label>
+    <input class="form__input" id="inventory-band" name="band" value="<%= item && item.band ? item.band : '' %>" placeholder="مثال: بند عقد، فئة، أو رقم بند للبحث لاحقاً" maxlength="500">
+    <% if (errors && errors.band) { %><span class="form__err"><%= errors.band.msg %></span><% } %>
+
+    <label class="form__label">الكمية المتاحة</label>
+    <input class="form__input" type="number" name="quantityOnHand" min="0" step="1" required value="<%= item ? item.quantityOnHand : 0 %>">
+
+    <label class="form__label">سعر الوحدة (ج.م) — لعروض الأسعار</label>
+    <input class="form__input" type="number" name="unitPrice" min="0" step="0.01" value="<%= item ? item.unitPrice : 0 %>">
+
+    <label class="form__label">ملاحظات</label>
+    <textarea class="form__input" name="notes" rows="3"><%= item && item.notes ? item.notes : '' %></textarea>
+
+    <button type="submit" class="btn btn--primary">حفظ</button>
+  </form>
+</div>
+<script>
+(function () {
+  var btn = document.getElementById('inventory-gen-code');
+  var input = document.getElementById('inventory-item-code');
+  if (!btn || !input) return;
+  var CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  function randomSegment(len) {
+    var out = '';
+    try {
+      var buf = new Uint8Array(len);
+      crypto.getRandomValues(buf);
+      for (var i = 0; i < len; i++) out += CHARS[buf[i] % CHARS.length];
+    } catch (e) {
+      for (var j = 0; j < len; j++) out += CHARS[Math.floor(Math.random() * CHARS.length)];
+    }
+    return out;
+  }
+  btn.addEventListener('click', function () {
+    input.value = 'DL-' + randomSegment(8);
+    input.focus();
+    input.select();
+  });
+})();
+</script>
+<% } %>

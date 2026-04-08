@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html dir="rtl" lang="ar">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>تسجيل الدخول | DEUOF LIGHT</title>
+  <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/app.css">
+</head>
+<body class="page page--auth">
+  <% if (successFlash && successFlash.length) { %>
+    <div class="flash flash--ok flash--login"><%= successFlash[0] %></div>
+  <% } %>
+  <% if (errorFlash && errorFlash.length) { %>
+    <div class="flash flash--err flash--login"><%= errorFlash[0] %></div>
+  <% } %>
+  <div class="auth-shell">
+    <div class="auth-card">
+      <div class="auth-brand">
+        <img src="/images/PHOTO-2025-10-14-05-49-43.png" alt="DEUOF LIGHT" class="auth-brand__logo" width="72" height="72" loading="eager">
+        <h1 class="auth-brand__title">DEUOF LIGHT</h1>
+        <p class="auth-brand__sub">نظام المخزون والمبيعات</p>
+      </div>
+      <p class="login-hint muted">استخدم العنوان <strong>http://</strong> وليس https:// على الجهاز المحلي.</p>
+      <form class="form" method="post" action="/login">
+        <label class="form__label">اسم المستخدم</label>
+        <input class="form__input" type="text" name="username" autocomplete="username" required autofocus>
+        <label class="form__label">كلمة المرور</label>
+        <input class="form__input" type="password" name="password" autocomplete="current-password" required>
+        <button type="submit" class="btn btn--primary btn--block">دخول</button>
+      </form>
+    </div>
+  </div>
+</body>
+</html>

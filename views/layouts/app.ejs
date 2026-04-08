@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html dir="rtl" lang="ar">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title><%= typeof title !== 'undefined' ? title + ' | ' : '' %>DEUOF LIGHT</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/app.css">
+</head>
+<body class="page page--shell">
+  <div class="shell">
+    <div class="sidebar-backdrop" aria-hidden="true"></div>
+    <aside id="app-sidebar" class="sidebar">
+      <div class="sidebar__brand">
+        <img src="/images/PHOTO-2025-10-14-05-49-43.png" alt="DEUOF LIGHT" class="sidebar__logo-img" width="48" height="48" loading="lazy">
+        <span class="sidebar__brand-text">DEUOF LIGHT</span>
+      </div>
+      <nav class="sidebar__nav">
+        <a href="/dashboard" class="sidebar__link <%= section === 'dashboard' ? 'is-active' : '' %>">لوحة التحكم</a>
+        <a href="/inventory" class="sidebar__link <%= section === 'inventory' ? 'is-active' : '' %>">المخزن</a>
+        <a href="/quotes" class="sidebar__link <%= section === 'quotes' ? 'is-active' : '' %>">بيانات الأسعار</a>
+        <a href="/sales" class="sidebar__link <%= section === 'sales' ? 'is-active' : '' %>">المبيعات</a>
+        <% if (isAdmin) { %>
+        <div class="sidebar__divider"></div>
+        <span class="sidebar__label">إدارة</span>
+        <a href="/reports/revenue" class="sidebar__link sidebar__link--admin <%= section === 'reports' ? 'is-active' : '' %>">الإيرادات</a>
+        <a href="/settings" class="sidebar__link sidebar__link--admin <%= section === 'settings' ? 'is-active' : '' %>">إعدادات الشركة</a>
+        <% } %>
+      </nav>
+      <div class="sidebar__footer">
+        <div class="sidebar__user"><%= currentUser.fullName || currentUser.username %></div>
+        <form action="/logout" method="post" class="sidebar__logout">
+          <button type="submit" class="btn btn--ghost btn--sm btn--full">خروج</button>
+        </form>
+      </div>
+    </aside>
+    <div class="shell__main">
+      <header class="mobile-topbar">
+        <button type="button" class="mobile-menu-toggle" aria-expanded="false" aria-controls="app-sidebar" aria-label="فتح القائمة">
+          <span class="mobile-menu-toggle__bars" aria-hidden="true">
+            <span class="mobile-menu-toggle__bar"></span>
+            <span class="mobile-menu-toggle__bar"></span>
+            <span class="mobile-menu-toggle__bar"></span>
+          </span>
+        </button>
+        <div class="mobile-topbar__brand">
+          <img src="/images/PHOTO-2025-10-14-05-49-43.png" alt="" class="mobile-topbar__logo" width="36" height="36" loading="lazy">
+          <span class="mobile-topbar__title">DEUOF LIGHT</span>
+        </div>
+      </header>
+      <% if (successFlash && successFlash.length) { %>
+        <div class="flash flash--ok"><%= successFlash[0] %></div>
+      <% } %>
+      <% if (errorFlash && errorFlash.length) { %>
+        <div class="flash flash--err"><%= errorFlash[0] %></div>
+      <% } %>
+      <main class="shell__content">
+        <%- body %>
+      </main>
+    </div>
+  </div>
+  <script src="/js/shell.js" defer></script>
+</body>
+</html>

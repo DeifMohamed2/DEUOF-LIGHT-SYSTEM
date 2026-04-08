@@ -1,0 +1,83 @@
+<div class="page-head page-head--split">
+  <div>
+    <h1 class="page-title">تقارير الإيرادات</h1>
+    <p class="muted">للمدير فقط — إجمالي المبيعات حسب الفترة</p>
+  </div>
+  <span class="badge badge--admin">مدير</span>
+</div>
+
+<form class="filters" method="get" action="/reports/revenue">
+  <label class="form__label form__label--inline">من</label>
+  <input class="form__input form__input--inline" type="date" name="from" value="<%= from %>">
+  <label class="form__label form__label--inline">إلى</label>
+  <input class="form__input form__input--inline" type="date" name="to" value="<%= to %>">
+  <button type="submit" class="btn btn--sm">تحديث</button>
+</form>
+
+<div class="grid grid--stats">
+  <div class="stat-card">
+    <span class="stat-card__label">إجمالي الإيرادات</span>
+    <span class="stat-card__value"><%= Number(totalRevenue).toFixed(2) %> ج.م</span>
+  </div>
+  <div class="stat-card">
+    <span class="stat-card__label">عدد عمليات البيع</span>
+    <span class="stat-card__value"><%= countSales %></span>
+  </div>
+</div>
+
+<div class="panel">
+  <h2 class="panel__title">الإيرادات حسب الشهر</h2>
+  <canvas id="rev-chart" height="120"></canvas>
+</div>
+
+<div class="panel">
+  <h2 class="panel__title">تفصيل شهري</h2>
+  <div class="table-wrap">
+  <table class="table">
+    <thead>
+      <tr>
+        <th>السنة</th>
+        <th>الشهر</th>
+        <th>الإجمالي (ج.م)</th>
+        <th>عدد المبيعات</th>
+      </tr>
+    </thead>
+    <tbody>
+      <% byMonth.forEach(function (row) { %>
+      <tr>
+        <td><%= row._id.y %></td>
+        <td><%= row._id.m %></td>
+        <td><%= Number(row.total).toFixed(2) %> ج.م</td>
+        <td><%= row.count %></td>
+      </tr>
+      <% }) %>
+    </tbody>
+  </table>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script>
+(function () {
+  var data = <%- chartMonthsJson %>;
+  var labels = data.map(function (d) { return d.label; });
+  var totals = data.map(function (d) { return d.total; });
+  var ctx = document.getElementById('rev-chart');
+  if (!ctx || !labels.length) return;
+  new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: labels,
+      datasets: [{ label: 'الإيرادات (ج.م)', data: totals, backgroundColor: 'rgba(90, 122, 106, 0.55)' }]
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { maxRotation: 45, minRotation: 45 } },
+        y: { beginAtZero: true }
+      }
+    }
+  });
+})();
+</script>

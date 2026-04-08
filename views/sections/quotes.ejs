@@ -1,0 +1,357 @@
+<% if (mode === 'list') { %>
+<div class="page-head page-head--split">
+  <div>
+    <h1 class="page-title">بيانات الأسعار</h1>
+    <p class="muted">كل الطلبات والعروض محفوظة</p>
+    <p class="muted priced-quote-hint priced-quote-hint--small"><span class="priced-quote-hint__star" dir="ltr"><%= pricedQuoteVatNotePrefix %></span><span dir="rtl">لعروض المخزون: <%= pricedQuoteVatNote %></span></p>
+  </div>
+  <div class="btn-row">
+    <a href="/quotes/new/request" class="btn">طلب تسعير</a>
+    <a href="/quotes/new/from-stock" class="btn btn--primary">عرض سعر من المخزون</a>
+  </div>
+</div>
+
+<form class="filters" method="get" action="/quotes">
+  <select name="type" class="form__input form__input--inline">
+    <option value="">كل الأنواع</option>
+    <option value="request" <%= query.type === 'request' ? 'selected' : '' %>>طلب تسعير</option>
+    <option value="from_stock" <%= query.type === 'from_stock' ? 'selected' : '' %>>من المخزون</option>
+  </select>
+  <input class="form__input form__input--inline" name="customer" placeholder="اسم العميل" value="<%= query.customer || '' %>">
+  <input class="form__input form__input--inline" type="date" name="from" value="<%= query.from || '' %>">
+  <input class="form__input form__input--inline" type="date" name="to" value="<%= query.to || '' %>">
+  <button type="submit" class="btn btn--sm">تصفية</button>
+</form>
+
+<% if (!quotes.length) { %>
+  <div class="panel empty">لا توجد سجلات.</div>
+<% } else { %>
+<div class="table-wrap">
+<table class="table">
+  <thead>
+    <tr>
+      <th>النوع</th>
+      <th>العميل</th>
+      <th>التاريخ</th>
+      <th>الإجمالي (ج.م)</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    <% quotes.forEach(function (q) { %>
+    <tr>
+      <td><%= q.type === 'request' ? 'طلب تسعير' : 'من المخزون' %></td>
+      <td><%= q.customerName %></td>
+      <td><%= new Date(q.createdAt).toLocaleString('ar-EG') %></td>
+      <td><%= q.type === 'from_stock' ? Number(q.total).toFixed(2) + ' ج.م' : '—' %></td>
+      <td><a class="link" href="/quotes/<%= q._id %>">عرض</a></td>
+    </tr>
+    <% }) %>
+  </tbody>
+</table>
+</div>
+<div class="pagination">
+  <% if (page > 1) { %>
+  <a class="btn btn--sm" href="?page=<%= page - 1 %>&type=<%= query.type || '' %>&customer=<%= query.customer || '' %>&from=<%= query.from || '' %>&to=<%= query.to || '' %>">السابق</a>
+  <% } %>
+  <span class="muted">صفحة <%= page %> من <%= totalPages %></span>
+  <% if (page < totalPages) { %>
+  <a class="btn btn--sm" href="?page=<%= page + 1 %>&type=<%= query.type || '' %>&customer=<%= query.customer || '' %>&from=<%= query.from || '' %>&to=<%= query.to || '' %>">التالي</a>
+  <% } %>
+</div>
+<% } %>
+
+<% } else if (mode === 'request') { %>
+<div class="page-head">
+  <h1 class="page-title">طلب تسعير جديد</h1>
+  <a href="/quotes" class="link">رجوع</a>
+</div>
+<div class="panel">
+  <form class="form" method="post" action="/quotes/new/request" id="quote-form">
+    <input type="hidden" name="linesJson" id="linesJson">
+    <label class="form__label">اسم العميل / الجهة</label>
+    <input class="form__input" name="customerName" required>
+    <label class="form__label">الهاتف (اختياري)</label>
+    <input class="form__input" name="customerPhone">
+    <label class="form__label">ملاحظات / شروط الدفع — تظهر في PDF</label>
+    <textarea class="form__input" name="notes" rows="4"><%= typeof defaultQuoteNotes !== 'undefined' ? defaultQuoteNotes : '' %></textarea>
+    <h3 class="form__section-title">الأسطر</h3>
+    <div class="table-wrap">
+    <table class="table table--compact" id="lines-table">
+      <thead>
+        <tr>
+          <th>كود الصنف</th>
+          <th>اسم الصنف</th>
+          <th>الكمية</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="lines-body"></tbody>
+    </table>
+    </div>
+    <button type="button" class="btn btn--sm" id="add-line">+ سطر</button>
+    <div class="form__actions">
+      <button type="submit" class="btn btn--primary">حفظ طلب التسعير</button>
+    </div>
+  </form>
+</div>
+<script>
+(function () {
+  var body = document.getElementById('lines-body');
+  var form = document.getElementById('quote-form');
+  var hidden = document.getElementById('linesJson');
+  function addRow() {
+    var tr = document.createElement('tr');
+    tr.innerHTML = '<td><input class="form__input" data-f="itemCode"></td>' +
+      '<td><input class="form__input" data-f="itemName" required></td>' +
+      '<td><input class="form__input" type="number" min="0" step="1" data-f="quantity" required></td>' +
+      '<td><button type="button" class="link link--danger rm">حذف</button></td>';
+    tr.querySelector('.rm').onclick = function () { tr.remove(); };
+    body.appendChild(tr);
+  }
+  document.getElementById('add-line').onclick = addRow;
+  addRow();
+  form.onsubmit = function () {
+    var rows = Array.prototype.slice.call(body.querySelectorAll('tr'));
+    var lines = rows.map(function (tr) {
+      return {
+        itemCode: tr.querySelector('[data-f=itemCode]').value.trim(),
+        itemName: tr.querySelector('[data-f=itemName]').value.trim(),
+        quantity: Number(tr.querySelector('[data-f=quantity]').value)
+      };
+    }).filter(function (l) { return l.itemName; });
+    hidden.value = JSON.stringify(lines);
+  };
+})();
+</script>
+
+<% } else if (mode === 'stock') { %>
+<div class="page-head">
+  <h1 class="page-title">عرض سعر من المخزون</h1>
+  <a href="/quotes" class="link">رجوع</a>
+</div>
+<div class="panel">
+  <p class="muted">أضف أصنافاً من المخزن بالبحث أدناه، أو سطوراً يدوية (أصناف غير مسجلة في المخزن) كما في طلب التسعير — مع إدخال السعر لكل سطر.</p>
+  <div class="search-hint priced-quote-hint priced-quote-hint--small" dir="ltr"><span class="priced-quote-hint__star"><%= pricedQuoteVatNotePrefix %></span><span dir="rtl"><strong>تنبيه:</strong> <%= pricedQuoteVatNote %></span></div>
+  <div class="inventory-picker">
+    <div class="inventory-picker__row">
+      <input type="search" id="stock-search" class="form__input form__input--search inventory-picker__input" placeholder="ابحث بالكود أو الاسم أو البند ثم اختر من القائمة…" autocomplete="off" aria-autocomplete="list" aria-controls="stock-pick-results">
+      <button type="button" class="btn btn--ghost btn--sm inventory-picker__clear" id="stock-search-clear" aria-label="مسح البحث">مسح</button>
+    </div>
+    <div id="stock-pick-results" class="pick-results" role="listbox" aria-label="نتائج البحث في المخزن"></div>
+  </div>
+  <form class="form" method="post" action="/quotes/new/from-stock" id="quote-form-stock">
+    <input type="hidden" name="linesJson" id="linesJsonStock">
+    <label class="form__label">اسم العميل / الجهة</label>
+    <input class="form__input" name="customerName" required>
+    <label class="form__label">الهاتف (اختياري)</label>
+    <input class="form__input" name="customerPhone">
+    <label class="form__label">ملاحظات / شروط الدفع — تظهر في PDF</label>
+    <textarea class="form__input" name="notes" rows="4"><%= typeof defaultQuoteNotes !== 'undefined' ? defaultQuoteNotes : '' %></textarea>
+    <h3 class="form__section-title">الأسطر</h3>
+    <div class="form__stock-tools">
+      <button type="button" class="btn btn--sm" id="stock-add-manual">+ إضافة سطر يدوي</button>
+      <span class="muted form__stock-tools-hint">سطر بدون ربط بالمخزن (كود واسم وكمية وسعر يدوياً)</span>
+    </div>
+    <div class="table-wrap">
+    <table class="table table--compact table--quote-stock">
+      <thead>
+        <tr>
+          <th>الكود</th>
+          <th>الاسم</th>
+          <th>الكمية</th>
+          <th>السعر (ج.م)</th>
+          <th>الإجمالي (ج.م)</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="lines-body-stock"></tbody>
+    </table>
+    </div>
+    <div class="stock-quote-totals" id="stock-quote-totals-wrap" hidden>
+      <p class="total-line total-line--stock-preview"><strong>الإجمالي:</strong> <span id="stock-grand-total">0.00 ج.م</span></p>
+      <p class="muted stock-quote-totals-hint">الإجمالي = مجموع (الكمية × السعر) لكل سطر؛ بعد الحفظ يظهر أيضاً في صفحة العرض وPDF وExcel.</p>
+    </div>
+    <div class="form__actions">
+      <button type="submit" class="btn btn--primary">حفظ عرض السعر</button>
+    </div>
+  </form>
+</div>
+<script src="/js/inventorySearchPicker.js"></script>
+<script>
+(function () {
+  var body = document.getElementById('lines-body-stock');
+  var form = document.getElementById('quote-form-stock');
+  var hidden = document.getElementById('linesJsonStock');
+  var btnManual = document.getElementById('stock-add-manual');
+  if (!body || !form || !hidden) return;
+  function esc(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+  }
+  function fmtMoney(n) {
+    var x = Number(n);
+    if (!Number.isFinite(x)) x = 0;
+    return (Math.round(x * 100) / 100).toFixed(2);
+  }
+  function updateRowLineTotal(tr) {
+    var qIn = tr.querySelector('[data-f=quantity]');
+    var pIn = tr.querySelector('[data-f=price]');
+    var out = tr.querySelector('[data-f=lineTotalDisplay]');
+    if (!out || !qIn || !pIn) return;
+    out.textContent = fmtMoney(Number(qIn.value) * Number(pIn.value)) + ' ج.م';
+  }
+  function refreshStockGrandTotal() {
+    var rows = body.querySelectorAll('tr');
+    var sum = 0;
+    for (var i = 0; i < rows.length; i++) {
+      var q = Number(rows[i].querySelector('[data-f=quantity]').value);
+      var p = Number(rows[i].querySelector('[data-f=price]').value);
+      if (Number.isFinite(q) && Number.isFinite(p)) sum += q * p;
+    }
+    var wrap = document.getElementById('stock-quote-totals-wrap');
+    var gt = document.getElementById('stock-grand-total');
+    if (gt) gt.textContent = fmtMoney(sum) + ' ج.م';
+    if (wrap) wrap.hidden = rows.length === 0;
+  }
+  function bindRemove(tr) {
+    tr.querySelector('.rm').onclick = function () {
+      tr.remove();
+      refreshStockGrandTotal();
+    };
+  }
+  function wireStockLineRow(tr) {
+    bindRemove(tr);
+    updateRowLineTotal(tr);
+    refreshStockGrandTotal();
+  }
+  function addLineFromStock(item) {
+    var tr = document.createElement('tr');
+    tr.setAttribute('data-line-source', 'stock');
+    tr.innerHTML =
+      '<td><code>' + esc(item.itemCode) + '</code><input type="hidden" data-f="inventoryItem" value="' + esc(item._id) + '"></td>' +
+      '<td><span data-f="itemName">' + esc(item.name) + '</span><input type="hidden" data-f="itemCode" value="' + esc(item.itemCode) + '"></td>' +
+      '<td><input class="form__input" type="number" min="1" max="' + item.quantityOnHand + '" step="1" data-f="quantity" value="1" required></td>' +
+      '<td><input class="form__input" type="number" min="0" step="0.01" data-f="price" value="' + Number(item.unitPrice || 0).toFixed(2) + '" required></td>' +
+      '<td class="quote-line-total-cell"><span class="quote-line-total" data-f="lineTotalDisplay">0.00 ج.م</span></td>' +
+      '<td><button type="button" class="link link--danger rm">حذف</button></td>';
+    body.appendChild(tr);
+    wireStockLineRow(tr);
+  }
+  function addManualLine() {
+    var tr = document.createElement('tr');
+    tr.setAttribute('data-line-source', 'manual');
+    tr.innerHTML =
+      '<td><input class="form__input" data-f="itemCode" placeholder="كود"></td>' +
+      '<td><input class="form__input" data-f="itemName" placeholder="اسم الصنف" required></td>' +
+      '<td><input class="form__input" type="number" min="0" step="1" data-f="quantity" value="1" required></td>' +
+      '<td><input class="form__input" type="number" min="0" step="0.01" data-f="price" value="0" required></td>' +
+      '<td class="quote-line-total-cell"><span class="quote-line-total" data-f="lineTotalDisplay">0.00 ج.م</span></td>' +
+      '<td><button type="button" class="link link--danger rm">حذف</button></td>';
+    body.appendChild(tr);
+    wireStockLineRow(tr);
+  }
+  body.addEventListener('input', function (e) {
+    if (!e.target.matches('[data-f=quantity], [data-f=price]')) return;
+    var tr = e.target.closest('tr');
+    if (!tr || !body.contains(tr)) return;
+    updateRowLineTotal(tr);
+    refreshStockGrandTotal();
+  });
+  if (btnManual) btnManual.onclick = addManualLine;
+  function isDuplicateStockItem(item) {
+    var id = String(item._id);
+    var nodes = body.querySelectorAll('tr[data-line-source="stock"] [data-f=inventoryItem]');
+    for (var i = 0; i < nodes.length; i++) {
+      if (nodes[i].value === id) return true;
+    }
+    return false;
+  }
+  if (window.InventorySearchPicker) {
+    window.InventorySearchPicker.attach({
+      searchId: 'stock-search',
+      resultsId: 'stock-pick-results',
+      clearButtonId: 'stock-search-clear',
+      debounceMs: 320,
+      minLen: 1,
+      isDuplicate: isDuplicateStockItem,
+      onSelect: function (x) {
+        addLineFromStock(x);
+      },
+    });
+  }
+  form.onsubmit = function () {
+    var rows = Array.prototype.slice.call(body.querySelectorAll('tr'));
+    var lines = rows.map(function (tr) {
+      var invEl = tr.querySelector('[data-f=inventoryItem]');
+      var inventoryItem = invEl && invEl.value ? invEl.value.trim() : '';
+      var codeEl = tr.querySelector('[data-f=itemCode]');
+      var itemCode = codeEl ? codeEl.value.trim() : '';
+      var nameEl = tr.querySelector('[data-f=itemName]');
+      var itemName = nameEl.tagName === 'INPUT' ? nameEl.value.trim() : nameEl.textContent.trim();
+      return {
+        inventoryItem: inventoryItem,
+        itemCode: itemCode,
+        itemName: itemName,
+        quantity: Number(tr.querySelector('[data-f=quantity]').value),
+        price: Number(tr.querySelector('[data-f=price]').value)
+      };
+    }).filter(function (l) { return l.itemName; });
+    hidden.value = JSON.stringify(lines);
+  };
+})();
+</script>
+
+<% } else if (mode === 'show' && quote) { %>
+<div class="page-head page-head--split">
+  <div>
+    <h1 class="page-title">بيان أسعار</h1>
+    <p class="muted"><%= quote.type === 'request' ? 'طلب تسعير' : 'عرض سعر من المخزون' %> — <%= quote.customerName %></p>
+  </div>
+  <div class="btn-row">
+    <a class="btn" href="/quotes/<%= quote._id %>/pdf" target="_blank">تحميل PDF</a>
+    <a class="btn" href="/quotes/<%= quote._id %>.xlsx">تحميل Excel</a>
+    <a class="link" href="/quotes">رجوع</a>
+  </div>
+</div>
+<div class="panel">
+  <dl class="meta-list">
+    <dt>الهاتف</dt><dd><%= quote.customerPhone || '—' %></dd>
+    <dt>التاريخ</dt><dd><%= new Date(quote.createdAt).toLocaleString('ar-EG') %></dd>
+    <dt>أنشأه</dt><dd><%= quote.createdBy && quote.createdBy.fullName ? quote.createdBy.fullName : (quote.createdBy && quote.createdBy.username) || '—' %></dd>
+    <% if (quote.notes && String(quote.notes).trim()) { %>
+    <dt>ملاحظات</dt><dd class="quote-notes"><%= quote.notes %></dd>
+    <% } %>
+  </dl>
+  <% if (quote.type === 'from_stock') { %>
+  <div class="search-hint priced-quote-hint priced-quote-hint--small" dir="ltr"><span class="priced-quote-hint__star"><%= pricedQuoteVatNotePrefix %></span><span dir="rtl"><strong>تنبيه:</strong> <%= pricedQuoteVatNote %></span></div>
+  <% } %>
+  <div class="table-wrap">
+  <table class="table">
+    <thead>
+      <tr>
+        <th>الكود</th>
+        <th>الاسم</th>
+        <th>الكمية</th>
+        <% if (quote.type === 'from_stock') { %><th>السعر (ج.م)</th><th>الإجمالي (ج.م)</th><% } %>
+      </tr>
+    </thead>
+    <tbody>
+      <% quote.lines.forEach(function (line) { %>
+      <tr>
+        <td><%= line.itemCode || '—' %></td>
+        <td><%= line.itemName %></td>
+        <td><%= line.quantity %></td>
+        <% if (quote.type === 'from_stock') { %>
+        <td><%= line.price != null ? Number(line.price).toFixed(2) + ' ج.م' : '' %></td>
+        <td><%= (Number(line.quantity) * Number(line.price || 0)).toFixed(2) %> ج.م</td>
+        <% } %>
+      </tr>
+      <% }) %>
+    </tbody>
+  </table>
+  </div>
+  <% if (quote.type === 'from_stock') { %>
+  <p class="total-line"><strong>الإجمالي:</strong> <%= Number(quote.total).toFixed(2) %> ج.م</p>
+  <% } %>
+</div>
+<% } %>

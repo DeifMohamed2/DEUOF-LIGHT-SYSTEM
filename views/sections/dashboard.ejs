@@ -1,0 +1,50 @@
+<div class="page-head">
+  <h1 class="page-title">لوحة التحكم</h1>
+  <p class="muted">مرحباً، <%= currentUser.fullName || currentUser.username %></p>
+</div>
+
+<div class="grid grid--stats">
+  <a href="/inventory" class="stat-card stat-card--link">
+    <span class="stat-card__label">أصناف المخزن</span>
+    <span class="stat-card__value"><%= itemsCount %></span>
+  </a>
+  <a href="/inventory" class="stat-card stat-card--link">
+    <span class="stat-card__label">تنبيه مخزون منخفض (≤5)</span>
+    <span class="stat-card__value"><%= lowStock %></span>
+  </a>
+  <a href="/quotes" class="stat-card stat-card--link">
+    <span class="stat-card__label">بيانات الأسعار المحفوظة</span>
+    <span class="stat-card__value"><%= quotesCount %></span>
+  </a>
+  <a href="/sales" class="stat-card stat-card--link">
+    <span class="stat-card__label">مبيعاتي</span>
+    <span class="stat-card__value"><%= mySalesCount %></span>
+  </a>
+</div>
+
+<% if (isAdmin && revenueMonth != null) { %>
+<div class="panel panel--highlight admin-only-block">
+  <h2 class="panel__title">ملخص الإيرادات <span class="badge">مدير</span></h2>
+  <div class="grid grid--stats grid--stats--inner">
+    <div class="stat-card">
+      <span class="stat-card__label">إيرادات الشهر الحالي</span>
+      <span class="stat-card__value"><%= Number(revenueMonth).toFixed(2) %> ج.م</span>
+    </div>
+    <div class="stat-card">
+      <span class="stat-card__label">إيرادات السنة الحالية</span>
+      <span class="stat-card__value"><%= Number(revenueYear).toFixed(2) %> ج.م</span>
+    </div>
+    <a href="/reports/revenue" class="stat-card stat-card--link">
+      <span class="stat-card__label">تقرير مفصل</span>
+      <span class="stat-card__value">←</span>
+    </a>
+  </div>
+</div>
+<% } %>
+
+<div class="quick-actions">
+  <a class="btn" href="/inventory/new">إضافة صنف</a>
+  <a class="btn" href="/quotes/new/request">طلب تسعير</a>
+  <a class="btn" href="/quotes/new/from-stock">عرض سعر من المخزون</a>
+  <a class="btn btn--primary" href="/sales/new">تسجيل مبيعة</a>
+</div>

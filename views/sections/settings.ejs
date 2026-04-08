@@ -1,0 +1,31 @@
+<div class="page-head">
+  <h1 class="page-title">إعدادات الشركة</h1>
+  <p class="muted">يظهر الاسم والشعار في ملفات PDF لبيانات الأسعار</p>
+</div>
+
+<div class="panel panel--narrow">
+  <form class="form" method="post" action="/settings" enctype="multipart/form-data">
+    <label class="form__label">اسم الشركة</label>
+    <input class="form__input" name="companyName" required value="<%= settings.companyName %>">
+
+    <label class="form__label">الاسم القانوني بالعربية (يظهر تحت الشعار في PDF)</label>
+    <input class="form__input" name="companyNameAr" value="<%= settings.companyNameAr || '' %>" placeholder="مثال: ضيوف لايت للاستيراد والتوريدات الكهربائية">
+
+    <label class="form__label">ملاحظات افتراضية لعروض الأسعار (تُملأ تلقائياً في النماذج الجديدة)</label>
+    <textarea class="form__input" name="defaultQuoteNotes" rows="4"><%= settings.defaultQuoteNotes || '' %></textarea>
+
+    <label class="form__label">العنوان</label>
+    <input class="form__input" name="address" value="<%= settings.address || '' %>">
+
+    <label class="form__label">الهاتف</label>
+    <input class="form__input" name="phone" value="<%= settings.phone || '' %>">
+
+    <label class="form__label">الشعار (صورة)</label>
+    <% if (settings.logoPath) { %>
+    <div class="logo-preview"><img src="<%= settings.logoPath %>" alt=""></div>
+    <% } %>
+    <input class="form__input" type="file" name="logo" accept="image/png,image/jpeg,image/webp,image/gif">
+
+    <button type="submit" class="btn btn--primary">حفظ</button>
+  </form>
+</div>
