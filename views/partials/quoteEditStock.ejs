@@ -1,0 +1,261 @@
+<div class="page-head page-head--split">
+  <div>
+    <h1 class="page-title">تعديل عرض السعر من المخزون</h1>
+    <p class="muted"><%= quote.customerName %></p>
+  </div>
+  <div class="btn-row">
+    <a href="/quotes/<%= quote._id %>" class="link">عرض</a>
+    <a href="/quotes" class="link">القائمة</a>
+  </div>
+</div>
+<div class="panel">
+  <p class="muted">عدّل الأسطر أو العميل أو الضريبة والخصم ثم احفظ.</p>
+  <div class="search-hint priced-quote-hint priced-quote-hint--small" id="stock-quote-vat-inclusive-hint-edit" dir="ltr"><span class="priced-quote-hint__star"><%= pricedQuoteVatNotePrefix %></span><span dir="rtl"><strong>تنبيه:</strong> <%= pricedQuoteVatNote %></span></div>
+  <div class="inventory-picker">
+    <div class="inventory-picker__row">
+      <input type="search" id="stock-search-edit" class="form__input form__input--search inventory-picker__input" placeholder="ابحث بالكود أو الاسم أو البند…" autocomplete="off" aria-autocomplete="list" aria-controls="stock-pick-results-edit">
+      <button type="button" class="btn btn--ghost btn--sm inventory-picker__clear" id="stock-search-clear-edit" aria-label="مسح البحث">مسح</button>
+    </div>
+    <div id="stock-pick-results-edit" class="pick-results" role="listbox" aria-label="نتائج البحث في المخزن"></div>
+  </div>
+  <form class="form" method="post" action="/quotes/<%= quote._id %>" id="quote-form-stock-edit">
+    <input type="hidden" name="linesJson" id="linesJsonStockEdit">
+    <label class="form__label">اسم العميل / الجهة</label>
+    <input class="form__input" name="customerName" required value="<%= quote.customerName %>">
+    <label class="form__label">الهاتف (اختياري)</label>
+    <input class="form__input" name="customerPhone" value="<%= quote.customerPhone || '' %>">
+    <label class="form__label">ملاحظات / شروط الدفع — تظهر في PDF</label>
+    <textarea class="form__input" name="notes" rows="4"><%= quote.notes || '' %></textarea>
+    <label class="form__check-row">
+      <input type="checkbox" name="vat14" id="quote-stock-vat14-edit" value="1" <%= quote.vat14Applied ? 'checked' : '' %>>
+      <span>أضف ١٤٪ ضريبة قيمة مضافة على إجمالي البنود</span>
+    </label>
+    <label class="form__check-row">
+      <input type="checkbox" name="noticeDiscount" id="quote-stock-notice-discount-edit" value="1" <%= quote.noticeDiscountApplied ? 'checked' : '' %>>
+      <span>خصم ١٪ إشعار من مجموع البنود (قبل الضريبة)</span>
+    </label>
+    <h3 class="form__section-title">الأسطر</h3>
+    <div class="form__stock-tools">
+      <button type="button" class="btn btn--sm" id="stock-add-manual-edit">+ إضافة سطر يدوي</button>
+    </div>
+    <div class="table-wrap">
+    <table class="table table--compact table--quote-stock">
+      <thead>
+        <tr>
+          <th>الكود</th>
+          <th>الاسم</th>
+          <th>الكمية</th>
+          <th>السعر (ج.م)</th>
+          <th>الإجمالي (ج.م)</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="lines-body-stock-edit"></tbody>
+    </table>
+    </div>
+    <div class="stock-quote-totals" id="stock-quote-totals-wrap-edit" hidden>
+      <div class="sale-totals-preview sale-totals-preview--rtl">
+        <p class="total-line muted" id="stock-line-vat-edit" hidden>ضريبة القيمة المضافة (١٤٪): <strong id="stock-tv-vat-edit">0.00</strong> ج.م</p>
+        <p class="total-line muted" id="stock-line-notice-edit" hidden>خصم ١٪ إشعار: <strong id="stock-tv-notice-edit">0.00</strong> ج.م</p>
+        <p class="total-line total-line--stock-preview"><span id="stock-tv-final-label-edit">الإجمالي</span>: <strong id="stock-tv-final-edit">0.00</strong> ج.م</p>
+      </div>
+    </div>
+    <div class="form__actions">
+      <button type="submit" class="btn btn--primary">حفظ التعديلات</button>
+    </div>
+  </form>
+</div>
+<script src="/js/inventorySearchPicker.js"></script>
+<script>
+(function () {
+  var initialLines = <%- JSON.stringify((quote.lines || []).map(function (l) {
+    var inv = l.inventoryItem ? String(l.inventoryItem) : '';
+    var maxQ = l.stockOnHandForMax != null ? Number(l.stockOnHandForMax) : 9999999;
+    return {
+      inventoryItem: inv,
+      itemCode: l.itemCode || '',
+      itemName: l.itemName || '',
+      quantity: l.quantity,
+      price: l.price != null ? l.price : 0,
+      maxQty: maxQ,
+      source: inv ? 'stock' : 'manual'
+    };
+  })) %>;
+  var body = document.getElementById('lines-body-stock-edit');
+  var form = document.getElementById('quote-form-stock-edit');
+  var hidden = document.getElementById('linesJsonStockEdit');
+  var btnManual = document.getElementById('stock-add-manual-edit');
+  var vatCb = document.getElementById('quote-stock-vat14-edit');
+  var noticeCb = document.getElementById('quote-stock-notice-discount-edit');
+  var VAT = 0.14;
+  var NOTICE_DISCOUNT = 0.01;
+  if (!body || !form || !hidden) return;
+  function esc(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+  }
+  function fmtMoney(n) {
+    var x = Number(n);
+    if (!Number.isFinite(x)) x = 0;
+    return (Math.round(x * 100) / 100).toFixed(2);
+  }
+  function updateRowLineTotal(tr) {
+    var qIn = tr.querySelector('[data-f=quantity]');
+    var pIn = tr.querySelector('[data-f=price]');
+    var out = tr.querySelector('[data-f=lineTotalDisplay]');
+    if (!out || !qIn || !pIn) return;
+    out.textContent = fmtMoney(Number(qIn.value) * Number(pIn.value)) + ' ج.م';
+  }
+  function toggleStockVatHintsEdit() {
+    var inclusive = document.getElementById('stock-quote-vat-inclusive-hint-edit');
+    if (!inclusive) return;
+    inclusive.hidden = !!(vatCb && vatCb.checked);
+  }
+  function refreshStockGrandTotalEdit() {
+    var rows = body.querySelectorAll('tr');
+    var sum = 0;
+    for (var i = 0; i < rows.length; i++) {
+      var q = Number(rows[i].querySelector('[data-f=quantity]').value);
+      var p = Number(rows[i].querySelector('[data-f=price]').value);
+      if (Number.isFinite(q) && Number.isFinite(p)) sum += q * p;
+    }
+    sum = Math.round(sum * 100) / 100;
+    var wrap = document.getElementById('stock-quote-totals-wrap-edit');
+    var lineVat = document.getElementById('stock-line-vat-edit');
+    var lineNotice = document.getElementById('stock-line-notice-edit');
+    var tvVat = document.getElementById('stock-tv-vat-edit');
+    var tvNotice = document.getElementById('stock-tv-notice-edit');
+    var tvFinal = document.getElementById('stock-tv-final-edit');
+    var tvLabel = document.getElementById('stock-tv-final-label-edit');
+    if (wrap) wrap.hidden = rows.length === 0;
+    var vatOn = vatCb && vatCb.checked;
+    var noticeOn = noticeCb && noticeCb.checked;
+    var vatAmt = vatOn ? Math.round(sum * VAT * 100) / 100 : 0;
+    var noticeAmt = noticeOn ? Math.round(sum * NOTICE_DISCOUNT * 100) / 100 : 0;
+    var finalVal = Math.max(0, Math.round((sum + vatAmt - noticeAmt) * 100) / 100);
+    if (lineVat) lineVat.hidden = !vatOn;
+    if (tvVat) tvVat.textContent = fmtMoney(vatAmt);
+    if (lineNotice) lineNotice.hidden = !noticeOn;
+    if (tvNotice) tvNotice.textContent = fmtMoney(noticeAmt);
+    if (tvFinal) tvFinal.textContent = fmtMoney(finalVal);
+    if (tvLabel) tvLabel.textContent = vatOn || noticeOn ? 'الإجمالي النهائي' : 'الإجمالي';
+  }
+  if (vatCb) vatCb.addEventListener('change', function () { toggleStockVatHintsEdit(); refreshStockGrandTotalEdit(); });
+  if (noticeCb) noticeCb.addEventListener('change', function () { refreshStockGrandTotalEdit(); });
+  toggleStockVatHintsEdit();
+  function bindRemove(tr) {
+    tr.querySelector('.rm').onclick = function () {
+      tr.remove();
+      refreshStockGrandTotalEdit();
+    };
+  }
+  function wireStockLineRow(tr) {
+    bindRemove(tr);
+    updateRowLineTotal(tr);
+    refreshStockGrandTotalEdit();
+  }
+  function addLineFromStock(item) {
+    var tr = document.createElement('tr');
+    tr.setAttribute('data-line-source', 'stock');
+    tr.innerHTML =
+      '<td><code>' + esc(item.itemCode) + '</code><input type="hidden" data-f="inventoryItem" value="' + esc(item._id) + '"></td>' +
+      '<td><span data-f="itemName">' + esc(item.name) + '</span><input type="hidden" data-f="itemCode" value="' + esc(item.itemCode) + '"></td>' +
+      '<td><input class="form__input" type="number" min="1" max="' + item.quantityOnHand + '" step="1" data-f="quantity" value="1" required></td>' +
+      '<td><input class="form__input" type="number" min="0" step="0.01" data-f="price" value="' + Number(item.unitPrice || 0).toFixed(2) + '" required></td>' +
+      '<td class="quote-line-total-cell"><span class="quote-line-total" data-f="lineTotalDisplay">0.00 ج.م</span></td>' +
+      '<td><button type="button" class="link link--danger rm">حذف</button></td>';
+    body.appendChild(tr);
+    wireStockLineRow(tr);
+  }
+  function addManualLine() {
+    var tr = document.createElement('tr');
+    tr.setAttribute('data-line-source', 'manual');
+    tr.innerHTML =
+      '<td><input class="form__input" data-f="itemCode" placeholder="كود"></td>' +
+      '<td><input class="form__input" data-f="itemName" placeholder="اسم الصنف" required></td>' +
+      '<td><input class="form__input" type="number" min="0" step="1" data-f="quantity" value="1" required></td>' +
+      '<td><input class="form__input" type="number" min="0" step="0.01" data-f="price" value="0" required></td>' +
+      '<td class="quote-line-total-cell"><span class="quote-line-total" data-f="lineTotalDisplay">0.00 ج.م</span></td>' +
+      '<td><button type="button" class="link link--danger rm">حذف</button></td>';
+    body.appendChild(tr);
+    wireStockLineRow(tr);
+  }
+  function hydrateInitialLine(l) {
+    if (l.source === 'stock' && l.inventoryItem) {
+      var tr = document.createElement('tr');
+      tr.setAttribute('data-line-source', 'stock');
+      var maxQ = Math.max(1, Math.floor(Number(l.maxQty) || 9999999));
+      tr.innerHTML =
+        '<td><code>' + esc(l.itemCode) + '</code><input type="hidden" data-f="inventoryItem" value="' + esc(l.inventoryItem) + '"></td>' +
+        '<td><span data-f="itemName">' + esc(l.itemName) + '</span><input type="hidden" data-f="itemCode" value="' + esc(l.itemCode) + '"></td>' +
+        '<td><input class="form__input" type="number" min="1" max="' + maxQ + '" step="1" data-f="quantity" value="' + Number(l.quantity) + '" required></td>' +
+        '<td><input class="form__input" type="number" min="0" step="0.01" data-f="price" value="' + fmtMoney(l.price) + '" required></td>' +
+        '<td class="quote-line-total-cell"><span class="quote-line-total" data-f="lineTotalDisplay">0.00 ج.م</span></td>' +
+        '<td><button type="button" class="link link--danger rm">حذف</button></td>';
+      body.appendChild(tr);
+      wireStockLineRow(tr);
+    } else {
+      var tr2 = document.createElement('tr');
+      tr2.setAttribute('data-line-source', 'manual');
+      tr2.innerHTML =
+        '<td><input class="form__input" data-f="itemCode" value="' + esc(l.itemCode) + '"></td>' +
+        '<td><input class="form__input" data-f="itemName" required value="' + esc(l.itemName) + '"></td>' +
+        '<td><input class="form__input" type="number" min="0" step="1" data-f="quantity" value="' + Number(l.quantity) + '" required></td>' +
+        '<td><input class="form__input" type="number" min="0" step="0.01" data-f="price" value="' + fmtMoney(l.price) + '" required></td>' +
+        '<td class="quote-line-total-cell"><span class="quote-line-total" data-f="lineTotalDisplay">0.00 ج.م</span></td>' +
+        '<td><button type="button" class="link link--danger rm">حذف</button></td>';
+      body.appendChild(tr2);
+      wireStockLineRow(tr2);
+    }
+  }
+  initialLines.forEach(hydrateInitialLine);
+  body.addEventListener('input', function (e) {
+    if (!e.target.matches('[data-f=quantity], [data-f=price]')) return;
+    var tr = e.target.closest('tr');
+    if (!tr || !body.contains(tr)) return;
+    updateRowLineTotal(tr);
+    refreshStockGrandTotalEdit();
+  });
+  if (btnManual) btnManual.onclick = addManualLine;
+  function isDuplicateStockItem(item) {
+    var id = String(item._id);
+    var nodes = body.querySelectorAll('tr[data-line-source="stock"] [data-f=inventoryItem]');
+    for (var i = 0; i < nodes.length; i++) {
+      if (nodes[i].value === id) return true;
+    }
+    return false;
+  }
+  if (window.InventorySearchPicker) {
+    window.InventorySearchPicker.attach({
+      searchId: 'stock-search-edit',
+      resultsId: 'stock-pick-results-edit',
+      clearButtonId: 'stock-search-clear-edit',
+      debounceMs: 320,
+      minLen: 1,
+      isDuplicate: isDuplicateStockItem,
+      onSelect: function (x) {
+        addLineFromStock(x);
+      },
+    });
+  }
+  form.onsubmit = function () {
+    var rows = Array.prototype.slice.call(body.querySelectorAll('tr'));
+    var lines = rows.map(function (tr) {
+      var invEl = tr.querySelector('[data-f=inventoryItem]');
+      var inventoryItem = invEl && invEl.value ? invEl.value.trim() : '';
+      var codeEl = tr.querySelector('[data-f=itemCode]');
+      var itemCode = codeEl ? codeEl.value.trim() : '';
+      var nameEl = tr.querySelector('[data-f=itemName]');
+      var itemName = nameEl.tagName === 'INPUT' ? nameEl.value.trim() : nameEl.textContent.trim();
+      return {
+        inventoryItem: inventoryItem,
+        itemCode: itemCode,
+        itemName: itemName,
+        quantity: Number(tr.querySelector('[data-f=quantity]').value),
+        price: Number(tr.querySelector('[data-f=price]').value)
+      };
+    }).filter(function (l) { return l.itemName; });
+    hidden.value = JSON.stringify(lines);
+  };
+  refreshStockGrandTotalEdit();
+})();
+</script>

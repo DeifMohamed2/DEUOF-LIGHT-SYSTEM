@@ -12,6 +12,7 @@ const {
   settingsRules,
   quoteCustomerValidators,
   saleValidators,
+  saleUpdateValidators,
   stockAdditionRules,
   userCreateRules,
   userUpdateRules,
@@ -58,12 +59,18 @@ main.post('/quotes/new/from-stock', quoteCustomerValidators, appCtrl.quotesCreat
 /* More specific paths first — otherwise /quotes/:id matches id ending in .xlsx */
 main.get('/quotes/:id/pdf', appCtrl.quotesPdf);
 main.get('/quotes/:id.xlsx', appCtrl.quotesXlsx);
+main.get('/quotes/:id/edit', appCtrl.quotesEditForm);
+main.post('/quotes/:id/delete', appCtrl.quotesDelete);
+main.post('/quotes/:id', quoteCustomerValidators, appCtrl.quotesUpdate);
 main.get('/quotes/:id', appCtrl.quotesShow);
 
 main.get('/sales', appCtrl.salesList);
 main.get('/sales/new', appCtrl.salesNewForm);
 main.post('/sales', saleValidators, appCtrl.salesCreate);
 main.get('/sales/:id/pdf', appCtrl.salesPdf);
+main.get('/sales/:id/edit', appCtrl.salesEditForm);
+main.post('/sales/:id/delete', appCtrl.salesDelete);
+main.post('/sales/:id', saleUpdateValidators, appCtrl.salesUpdate);
 main.get('/sales/:id', appCtrl.salesShow);
 
 main.get('/reports/revenue', requireAdmin, appCtrl.reportsRevenue);

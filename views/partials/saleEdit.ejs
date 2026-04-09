@@ -1,0 +1,268 @@
+<div class="page-head page-head--split">
+  <div>
+    <h1 class="page-title">تعديل مبيعة</h1>
+    <p class="muted">إذن الصرف: <%= sale.disbursementNumber || '—' %> — تُحدَّث الكميات في المخزن وفق الفرق بين القديم والجديد.</p>
+  </div>
+  <div class="btn-row">
+    <a href="/sales/<%= sale._id %>" class="link">عرض</a>
+    <a href="/sales" class="link">القائمة</a>
+  </div>
+</div>
+<div class="panel">
+  <p class="muted">عدّل البيانات والأسطر أو تاريخ البيع ثم احفظ. حذف المبيعة يُرجع كميات المخزن.</p>
+  <div class="inventory-picker">
+    <div class="inventory-picker__row">
+      <input type="search" id="sale-search-edit" class="form__input form__input--search inventory-picker__input" placeholder="ابحث في المخزن…" autocomplete="off" aria-autocomplete="list" aria-controls="sale-pick-results-edit">
+      <button type="button" class="btn btn--ghost btn--sm inventory-picker__clear" id="sale-search-clear-edit" aria-label="مسح البحث">مسح</button>
+    </div>
+    <div id="sale-pick-results-edit" class="pick-results" role="listbox"></div>
+  </div>
+  <form class="form" method="post" action="/sales/<%= sale._id %>" id="sale-form-edit">
+    <input type="hidden" name="linesJson" id="linesJsonEdit">
+
+    <h3 class="form__section-title">بيانات العميل والدفع</h3>
+    <label class="form__label">اسم العميل / الجهة</label>
+    <input class="form__input" name="customerName" required value="<%= sale.customerName || '' %>" autocomplete="organization">
+
+    <label class="form__label">رقم إذن الصرف</label>
+    <input class="form__input" name="disbursementNumber" required maxlength="200" value="<%= sale.disbursementNumber || '' %>">
+
+    <label class="form__label">رقم العميل</label>
+    <input class="form__input" name="customerNumber" maxlength="200" value="<%= sale.customerNumber || '' %>">
+
+    <label class="form__label" for="sale-payment-method-edit">طريقة الدفع</label>
+    <select class="form__input" id="sale-payment-method-edit" name="paymentMethod" required>
+      <% (salePaymentMethods || []).forEach(function (opt) { %>
+      <option value="<%= opt.value %>" <%= sale.paymentMethod === opt.value ? 'selected' : '' %>><%= opt.label %></option>
+      <% }) %>
+    </select>
+
+    <label class="form__label">ملاحظة دفع إضافية (اختياري)</label>
+    <input class="form__input" name="paymentNote" maxlength="2000" value="<%= sale.paymentNote || '' %>">
+
+    <label class="form__label" for="sale-sold-at-edit">تاريخ ووقت البيع</label>
+    <input class="form__input" type="datetime-local" id="sale-sold-at-edit" name="soldAt" value="<%= typeof soldAtInputValue !== 'undefined' ? soldAtInputValue : '' %>">
+
+    <label class="form__check-row">
+      <input type="checkbox" name="vat14" id="sale-vat14-edit" value="1" <%= sale.vat14Applied ? 'checked' : '' %>>
+      <span>أضف ١٤٪ ضريبة قيمة مضافة على إجمالي البنود</span>
+    </label>
+    <label class="form__check-row">
+      <input type="checkbox" name="noticeDiscount" id="sale-notice-discount-edit" value="1" <%= sale.noticeDiscountApplied ? 'checked' : '' %>>
+      <span>خصم ١٪ إشعار من مجموع البنود (قبل الضريبة)</span>
+    </label>
+
+    <h3 class="form__section-title">بنود المبيعة</h3>
+    <div class="form__stock-tools">
+      <button type="button" class="btn btn--sm" id="sale-add-manual-edit">+ إضافة سطر يدوي</button>
+    </div>
+    <div class="table-wrap">
+    <table class="table table--compact">
+      <thead>
+        <tr>
+          <th>المصدر</th>
+          <th>الكود</th>
+          <th>الاسم</th>
+          <th>الكمية</th>
+          <th>سعر الوحدة (ج.م)</th>
+          <th>الإجمالي (ج.م)</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="lines-body-edit"></tbody>
+    </table>
+    </div>
+    <div id="sale-totals-wrap-edit" class="sale-totals-preview sale-totals-preview--rtl" hidden>
+      <p class="total-line muted" id="sale-line-vat-edit" hidden>ضريبة القيمة المضافة (١٤٪): <strong id="tv-vat-edit">0.00</strong> ج.م</p>
+      <p class="total-line muted" id="sale-line-notice-edit" hidden>خصم ١٪ إشعار: <strong id="tv-notice-edit">0.00</strong> ج.م</p>
+      <p class="total-line"><span id="tv-final-label-edit">الإجمالي</span>: <strong id="tv-final-edit">0.00</strong> ج.م</p>
+    </div>
+    <div class="form__actions">
+      <button type="submit" class="btn btn--primary">حفظ التعديلات</button>
+    </div>
+  </form>
+</div>
+<script src="/js/inventorySearchPicker.js"></script>
+<script>
+(function () {
+  var initialLines = <%- JSON.stringify((sale.lines || []).map(function (l) {
+    var fromInv = l.fromStock !== false && l.inventoryItem;
+    return {
+      fromStock: !!fromInv,
+      inventoryItem: fromInv ? String(l.inventoryItem) : '',
+      itemCode: l.itemCode || '',
+      itemName: l.itemName || '',
+      quantity: l.quantity,
+      unitPrice: l.unitPrice,
+      maxQtyForEdit: l.maxQtyForEdit != null ? l.maxQtyForEdit : 9999999
+    };
+  })) %>;
+  var body = document.getElementById('lines-body-edit');
+  var form = document.getElementById('sale-form-edit');
+  var hidden = document.getElementById('linesJsonEdit');
+  var totalsWrap = document.getElementById('sale-totals-wrap-edit');
+  var lineVat = document.getElementById('sale-line-vat-edit');
+  var lineNotice = document.getElementById('sale-line-notice-edit');
+  var tvVat = document.getElementById('tv-vat-edit');
+  var tvNotice = document.getElementById('tv-notice-edit');
+  var tvFinal = document.getElementById('tv-final-edit');
+  var tvFinalLabel = document.getElementById('tv-final-label-edit');
+  var vatCb = document.getElementById('sale-vat14-edit');
+  var noticeCb = document.getElementById('sale-notice-discount-edit');
+  var btnManual = document.getElementById('sale-add-manual-edit');
+  var VAT = 0.14;
+  var NOTICE_DISCOUNT = 0.01;
+  if (!body || !form || !hidden) return;
+  function recalc() {
+    var sum = 0;
+    Array.prototype.forEach.call(body.querySelectorAll('tr'), function (tr) {
+      var q = Number(tr.querySelector('[data-f=quantity]').value) || 0;
+      var p = Number(tr.querySelector('[data-f=unitPrice]').value) || 0;
+      sum += q * p;
+      var lt = tr.querySelector('[data-f=lineTotal]');
+      if (lt) lt.textContent = (q * p).toFixed(2) + ' ج.م';
+    });
+    sum = Math.round(sum * 100) / 100;
+    var hasRows = body.querySelectorAll('tr').length > 0;
+    totalsWrap.hidden = !hasRows;
+    if (!hasRows) return;
+    var vatOn = vatCb && vatCb.checked;
+    var noticeOn = noticeCb && noticeCb.checked;
+    var vatAmt = vatOn ? Math.round(sum * VAT * 100) / 100 : 0;
+    var noticeAmt = noticeOn ? Math.round(sum * NOTICE_DISCOUNT * 100) / 100 : 0;
+    var finalVal = Math.max(0, Math.round((sum + vatAmt - noticeAmt) * 100) / 100);
+    if (lineVat) lineVat.hidden = !vatOn;
+    if (tvVat) tvVat.textContent = vatAmt.toFixed(2);
+    if (lineNotice) lineNotice.hidden = !noticeOn;
+    if (tvNotice) tvNotice.textContent = noticeAmt.toFixed(2);
+    if (tvFinal) tvFinal.textContent = finalVal.toFixed(2);
+    if (tvFinalLabel) tvFinalLabel.textContent = vatOn || noticeOn ? 'الإجمالي النهائي' : 'الإجمالي';
+  }
+  if (vatCb) vatCb.addEventListener('change', recalc);
+  if (noticeCb) noticeCb.addEventListener('change', recalc);
+  function esc(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+  }
+  function bindRemove(tr) {
+    tr.querySelector('.rm').onclick = function () { tr.remove(); recalc(); };
+  }
+  function wireInputs(tr) {
+    tr.querySelectorAll('[data-f=quantity], [data-f=unitPrice]').forEach(function (el) {
+      el.addEventListener('input', recalc);
+    });
+  }
+  function addLineFromStock(item) {
+    var tr = document.createElement('tr');
+    tr.setAttribute('data-line-source', 'stock');
+    tr.innerHTML =
+      '<td><span class="sale-line-badge sale-line-badge--stock">مخزن</span></td>' +
+      '<td><code>' + esc(item.itemCode) + '</code>' +
+      '<input type="hidden" data-f="inventoryItem" value="' + esc(item._id) + '">' +
+      '<input type="hidden" data-f="itemCode" value="' + esc(item.itemCode) + '"></td>' +
+      '<td><span data-f="itemName">' + esc(item.name) + '</span></td>' +
+      '<td><input class="form__input" type="number" min="1" max="' + item.quantityOnHand + '" step="1" data-f="quantity" value="1" required></td>' +
+      '<td><input class="form__input" type="number" min="0" step="0.01" data-f="unitPrice" value="' + Number(item.unitPrice || 0).toFixed(2) + '" required></td>' +
+      '<td><span data-f="lineTotal">' + Number(item.unitPrice || 0).toFixed(2) + ' ج.م</span></td>' +
+      '<td><button type="button" class="link link--danger rm">حذف</button></td>';
+    bindRemove(tr);
+    wireInputs(tr);
+    body.appendChild(tr);
+    recalc();
+  }
+  function addManualLine() {
+    var tr = document.createElement('tr');
+    tr.setAttribute('data-line-source', 'manual');
+    tr.innerHTML =
+      '<td><span class="sale-line-badge sale-line-badge--manual">خارج المخزن</span></td>' +
+      '<td><input class="form__input" data-f="itemCode" placeholder="كود (اختياري)"></td>' +
+      '<td><input class="form__input" data-f="itemName" placeholder="اسم الصنف" required></td>' +
+      '<td><input class="form__input" type="number" min="1" step="1" data-f="quantity" value="1" required></td>' +
+      '<td><input class="form__input" type="number" min="0" step="0.01" data-f="unitPrice" value="0" required></td>' +
+      '<td><span data-f="lineTotal">0.00 ج.م</span></td>' +
+      '<td><button type="button" class="link link--danger rm">حذف</button></td>';
+    bindRemove(tr);
+    wireInputs(tr);
+    body.appendChild(tr);
+    recalc();
+  }
+  function hydrateLine(l) {
+    if (l.fromStock && l.inventoryItem) {
+      var maxQ = Math.max(1, Math.floor(Number(l.maxQtyForEdit) || 9999999));
+      var tr = document.createElement('tr');
+      tr.setAttribute('data-line-source', 'stock');
+      tr.innerHTML =
+        '<td><span class="sale-line-badge sale-line-badge--stock">مخزن</span></td>' +
+        '<td><code>' + esc(l.itemCode) + '</code>' +
+        '<input type="hidden" data-f="inventoryItem" value="' + esc(l.inventoryItem) + '">' +
+        '<input type="hidden" data-f="itemCode" value="' + esc(l.itemCode) + '"></td>' +
+        '<td><span data-f="itemName">' + esc(l.itemName) + '</span></td>' +
+        '<td><input class="form__input" type="number" min="1" max="' + maxQ + '" step="1" data-f="quantity" value="' + Number(l.quantity) + '" required></td>' +
+        '<td><input class="form__input" type="number" min="0" step="0.01" data-f="unitPrice" value="' + Number(l.unitPrice).toFixed(2) + '" required></td>' +
+        '<td><span data-f="lineTotal">' + (Number(l.quantity) * Number(l.unitPrice)).toFixed(2) + ' ج.م</span></td>' +
+        '<td><button type="button" class="link link--danger rm">حذف</button></td>';
+      bindRemove(tr);
+      wireInputs(tr);
+      body.appendChild(tr);
+    } else {
+      var tr2 = document.createElement('tr');
+      tr2.setAttribute('data-line-source', 'manual');
+      tr2.innerHTML =
+        '<td><span class="sale-line-badge sale-line-badge--manual">خارج المخزن</span></td>' +
+        '<td><input class="form__input" data-f="itemCode" value="' + esc(l.itemCode) + '"></td>' +
+        '<td><input class="form__input" data-f="itemName" required value="' + esc(l.itemName) + '"></td>' +
+        '<td><input class="form__input" type="number" min="1" step="1" data-f="quantity" value="' + Number(l.quantity) + '" required></td>' +
+        '<td><input class="form__input" type="number" min="0" step="0.01" data-f="unitPrice" value="' + Number(l.unitPrice).toFixed(2) + '" required></td>' +
+        '<td><span data-f="lineTotal">' + (Number(l.quantity) * Number(l.unitPrice)).toFixed(2) + ' ج.م</span></td>' +
+        '<td><button type="button" class="link link--danger rm">حذف</button></td>';
+      bindRemove(tr2);
+      wireInputs(tr2);
+      body.appendChild(tr2);
+    }
+  }
+  initialLines.forEach(hydrateLine);
+  if (btnManual) btnManual.onclick = addManualLine;
+  function isDuplicateItem(item) {
+    var id = String(item._id);
+    var nodes = body.querySelectorAll('tr[data-line-source="stock"] [data-f=inventoryItem]');
+    for (var i = 0; i < nodes.length; i++) {
+      if (nodes[i].value === id) return true;
+    }
+    return false;
+  }
+  if (window.InventorySearchPicker) {
+    window.InventorySearchPicker.attach({
+      searchId: 'sale-search-edit',
+      resultsId: 'sale-pick-results-edit',
+      clearButtonId: 'sale-search-clear-edit',
+      debounceMs: 320,
+      minLen: 1,
+      isDuplicate: isDuplicateItem,
+      onSelect: function (x) {
+        addLineFromStock(x);
+      },
+    });
+  }
+  form.onsubmit = function () {
+    var rows = Array.prototype.slice.call(body.querySelectorAll('tr'));
+    var lines = rows.map(function (tr) {
+      var invEl = tr.querySelector('[data-f=inventoryItem]');
+      var inventoryItem = invEl && invEl.value ? invEl.value.trim() : '';
+      var codeEl = tr.querySelector('[data-f=itemCode]');
+      var itemCode = codeEl ? codeEl.value.trim() : '';
+      var nameEl = tr.querySelector('[data-f=itemName]');
+      var itemName = nameEl && nameEl.tagName === 'INPUT' ? nameEl.value.trim() : (nameEl ? nameEl.textContent.trim() : '');
+      var qty = Number(tr.querySelector('[data-f=quantity]').value);
+      var unitPrice = Number(tr.querySelector('[data-f=unitPrice]').value);
+      if (inventoryItem) {
+        return { inventoryItem: inventoryItem, itemCode: itemCode, itemName: itemName, quantity: qty, unitPrice: unitPrice };
+      }
+      return { itemCode: itemCode, itemName: itemName, quantity: qty, unitPrice: unitPrice };
+    }).filter(function (l) {
+      if (l.inventoryItem) return true;
+      return Boolean(l.itemName);
+    });
+    hidden.value = JSON.stringify(lines);
+  };
+  recalc();
+})();
+</script>

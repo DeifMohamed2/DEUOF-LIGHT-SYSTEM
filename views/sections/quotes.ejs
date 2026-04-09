@@ -44,7 +44,16 @@
       <td><%= q.customerName %></td>
       <td><%= new Date(q.createdAt).toLocaleString('ar-EG') %></td>
       <td><%= q.type === 'from_stock' ? Number(q.total).toFixed(2) + ' ج.م' : '—' %></td>
-      <td><a class="link" href="/quotes/<%= q._id %>">عرض</a></td>
+      <td class="nowrap">
+        <a class="link" href="/quotes/<%= q._id %>">عرض</a>
+        <% var qCreator = q.createdBy && q.createdBy._id ? String(q.createdBy._id) : ''; %>
+        <% if ((typeof listIsAdmin !== 'undefined' && listIsAdmin) || (typeof listUserId !== 'undefined' && qCreator === String(listUserId))) { %>
+        · <a class="link" href="/quotes/<%= q._id %>/edit">تعديل</a>
+        · <form class="form--inline-delete" method="post" action="/quotes/<%= q._id %>/delete" onsubmit="return confirm('حذف بيان الأسعار نهائياً؟ لا يمكن التراجع.');">
+          <button type="submit" class="link link--danger btn-as-text">حذف</button>
+        </form>
+        <% } %>
+      </td>
     </tr>
     <% }) %>
   </tbody>
@@ -352,15 +361,107 @@
 })();
 </script>
 
+<% } else if (mode === 'edit-request' && quote) { %>
+<div class="page-head page-head--split">
+  <div>
+    <h1 class="page-title">تعديل طلب تسعير</h1>
+    <p class="muted"><%= quote.customerName %></p>
+  </div>
+  <div class="btn-row">
+    <a href="/quotes/<%= quote._id %>" class="link">عرض السجل</a>
+    <a href="/quotes" class="link">القائمة</a>
+  </div>
+</div>
+<div class="panel">
+  <form class="form" method="post" action="/quotes/<%= quote._id %>" id="quote-form-edit-req">
+    <input type="hidden" name="linesJson" id="linesJsonEditReq">
+    <label class="form__label">اسم العميل / الجهة</label>
+    <input class="form__input" name="customerName" required value="<%= quote.customerName %>">
+    <label class="form__label">الهاتف (اختياري)</label>
+    <input class="form__input" name="customerPhone" value="<%= quote.customerPhone || '' %>">
+    <label class="form__label">ملاحظات / شروط الدفع — تظهر في PDF</label>
+    <textarea class="form__input" name="notes" rows="4"><%= quote.notes || '' %></textarea>
+    <h3 class="form__section-title">الأسطر</h3>
+    <div class="table-wrap">
+    <table class="table table--compact">
+      <thead>
+        <tr>
+          <th>كود الصنف</th>
+          <th>اسم الصنف</th>
+          <th>الكمية</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="lines-body-edit-req"></tbody>
+    </table>
+    </div>
+    <button type="button" class="btn btn--sm" id="add-line-edit-req">+ سطر</button>
+    <div class="form__actions">
+      <button type="submit" class="btn btn--primary">حفظ التعديلات</button>
+    </div>
+  </form>
+</div>
+<script>
+(function () {
+  var body = document.getElementById('lines-body-edit-req');
+  var form = document.getElementById('quote-form-edit-req');
+  var hidden = document.getElementById('linesJsonEditReq');
+  var initialLines = <%- JSON.stringify((quote.lines || []).map(function (l) {
+    return { itemCode: l.itemCode || '', itemName: l.itemName || '', quantity: l.quantity };
+  })) %>;
+  function escAttr(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
+  }
+  function addRow(prefill) {
+    var tr = document.createElement('tr');
+    var ic = prefill && prefill.itemCode != null ? String(prefill.itemCode) : '';
+    var iname = prefill && prefill.itemName != null ? String(prefill.itemName) : '';
+    var q = prefill && prefill.quantity != null ? prefill.quantity : 1;
+    tr.innerHTML = '<td><input class="form__input" data-f="itemCode" value="' + escAttr(ic) + '"></td>' +
+      '<td><input class="form__input" data-f="itemName" required value="' + escAttr(iname) + '"></td>' +
+      '<td><input class="form__input" type="number" min="0" step="1" data-f="quantity" required value="' + escAttr(String(q)) + '"></td>' +
+      '<td><button type="button" class="link link--danger rm">حذف</button></td>';
+    tr.querySelector('.rm').onclick = function () { tr.remove(); };
+    body.appendChild(tr);
+  }
+  document.getElementById('add-line-edit-req').onclick = function () { addRow(null); };
+  if (initialLines.length) {
+    initialLines.forEach(function (l) { addRow(l); });
+  } else {
+    addRow(null);
+  }
+  form.onsubmit = function () {
+    var rows = Array.prototype.slice.call(body.querySelectorAll('tr'));
+    var lines = rows.map(function (tr) {
+      return {
+        itemCode: tr.querySelector('[data-f=itemCode]').value.trim(),
+        itemName: tr.querySelector('[data-f=itemName]').value.trim(),
+        quantity: Number(tr.querySelector('[data-f=quantity]').value)
+      };
+    }).filter(function (l) { return l.itemName; });
+    hidden.value = JSON.stringify(lines);
+  };
+})();
+</script>
+
+<% } else if (mode === 'edit-stock' && quote) { %>
+<%- include('../partials/quoteEditStock') %>
+
 <% } else if (mode === 'show' && quote) { %>
 <div class="page-head page-head--split">
   <div>
     <h1 class="page-title">بيان أسعار</h1>
     <p class="muted"><%= quote.type === 'request' ? 'طلب تسعير' : 'عرض سعر من المخزون' %> — <%= quote.customerName %></p>
   </div>
-  <div class="btn-row">
+  <div class="btn-row btn-row--wrap">
     <a class="btn" href="/quotes/<%= quote._id %>/pdf" target="_blank">تحميل PDF</a>
     <a class="btn" href="/quotes/<%= quote._id %>.xlsx">تحميل Excel</a>
+    <% if (typeof canMutateQuote !== 'undefined' && canMutateQuote) { %>
+    <a class="btn btn--secondary" href="/quotes/<%= quote._id %>/edit">تعديل</a>
+    <form method="post" action="/quotes/<%= quote._id %>/delete" class="form--inline-delete" onsubmit="return confirm('حذف بيان الأسعار نهائياً؟');">
+      <button type="submit" class="btn btn--danger btn--sm">حذف</button>
+    </form>
+    <% } %>
     <a class="link" href="/quotes">رجوع</a>
   </div>
 </div>

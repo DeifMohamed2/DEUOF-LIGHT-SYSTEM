@@ -42,7 +42,16 @@
       <% if (isAdmin) { %>
       <td><%= s.createdBy && (s.createdBy.fullName || s.createdBy.username) || '—' %></td>
       <% } %>
-      <td><a class="link" href="/sales/<%= s._id %>">تفاصيل</a></td>
+      <td class="nowrap">
+        <a class="link" href="/sales/<%= s._id %>">تفاصيل</a>
+        <% var sCreator = s.createdBy && s.createdBy._id ? String(s.createdBy._id) : ''; %>
+        <% if (isAdmin || (typeof listUserId !== 'undefined' && sCreator === String(listUserId))) { %>
+        · <a class="link" href="/sales/<%= s._id %>/edit">تعديل</a>
+        · <form class="form--inline-delete" method="post" action="/sales/<%= s._id %>/delete" onsubmit="return confirm('حذف المبيعة وإرجاع كميات المخزن؟ لا يمكن التراجع.');">
+          <button type="submit" class="link link--danger btn-as-text">حذف</button>
+        </form>
+        <% } %>
+      </td>
     </tr>
     <% }) %>
   </tbody>
@@ -275,11 +284,20 @@
 })();
 </script>
 
+<% } else if (mode === 'edit' && sale) { %>
+<%- include('../partials/saleEdit') %>
+
 <% } else if (mode === 'show' && sale) { %>
 <div class="page-head page-head--split">
   <h1 class="page-title">تفاصيل المبيعة</h1>
-  <div class="btn-row">
+  <div class="btn-row btn-row--wrap">
     <a class="btn" href="/sales/<%= sale._id %>/pdf" target="_blank">تحميل PDF</a>
+    <% if (typeof canMutateSale !== 'undefined' && canMutateSale) { %>
+    <a class="btn btn--secondary" href="/sales/<%= sale._id %>/edit">تعديل</a>
+    <form method="post" action="/sales/<%= sale._id %>/delete" class="form--inline-delete" onsubmit="return confirm('حذف المبيعة وإرجاع كميات المخزن؟');">
+      <button type="submit" class="btn btn--danger btn--sm">حذف</button>
+    </form>
+    <% } %>
     <a href="/sales" class="link">رجوع</a>
   </div>
 </div>

@@ -53,6 +53,11 @@ const saleValidators = [
   body('linesJson').notEmpty().withMessage('الأسطر مطلوبة'),
 ];
 
+const saleUpdateValidators = [
+  ...saleValidators,
+  body('soldAt').optional({ values: 'falsy' }).trim(),
+];
+
 const stockAdditionRules = [
   body('addedAt').trim().notEmpty().withMessage('تاريخ الإضافة مطلوب'),
   body('source').trim().notEmpty().withMessage('المصدر (من أين) مطلوب').isLength({ max: 500 }),
@@ -95,6 +100,7 @@ module.exports = {
   settingsRules,
   quoteCustomerValidators,
   saleValidators,
+  saleUpdateValidators,
   stockAdditionRules,
   userCreateRules,
   userUpdateRules,

@@ -47,6 +47,106 @@ function computeSubtotalAdjustments(subtotal, vat14Applied, noticeDiscountApplie
   return { vat14Amount, noticeDiscountAmount, finalTotal };
 }
 
+/** Admin أو منشئ السجل فقط يمكنه التعديل/الحذف */
+function quoteAccessFilter(req) {
+  const id = req.params.id;
+  if (!mongoose.isValidObjectId(id)) return null;
+  if (req.session.role === 'admin') return { _id: id };
+  return { _id: id, createdBy: req.session.userId };
+}
+
+function saleAccessFilter(req) {
+  const id = req.params.id;
+  if (!mongoose.isValidObjectId(id)) return null;
+  if (req.session.role === 'admin') return { _id: id };
+  return { _id: id, createdBy: req.session.userId };
+}
+
+function stockQtyMapFromSaleLines(saleLines) {
+  const m = new Map();
+  for (const line of saleLines) {
+    if (!line.fromStock || !line.inventoryItem) continue;
+    const id = String(line.inventoryItem);
+    m.set(id, (m.get(id) || 0) + Number(line.quantity));
+  }
+  return m;
+}
+
+/**
+ * تعديل مبيعة: تغيير صافي المخزون = (كميات قديمة − كميات جديدة) لكل صنف مخزون.
+ */
+async function applySaleStockDelta(oldLines, newLines) {
+  const oldM = stockQtyMapFromSaleLines(oldLines);
+  const newM = stockQtyMapFromSaleLines(newLines);
+  const ids = new Set([...oldM.keys(), ...newM.keys()]);
+  if (ids.size === 0) return { ok: true };
+
+  const oids = [...ids].map((i) => new mongoose.Types.ObjectId(i));
+  const items = await InventoryItem.find({ _id: { $in: oids } });
+  const byId = new Map(items.map((it) => [String(it._id), it]));
+
+  for (const id of ids) {
+    const oldQ = oldM.get(id) || 0;
+    const newQ = newM.get(id) || 0;
+    const inc = oldQ - newQ;
+    if (inc === 0) continue;
+    const item = byId.get(id);
+    if (!item && (oldQ > 0 || newQ > 0)) {
+      return { error: 'صنف مخزون غير موجود' };
+    }
+    if (item) {
+      const projected = item.quantityOnHand + inc;
+      if (projected < 0) {
+        return { error: `الكمية غير كافية في المخزون (${item.name})` };
+      }
+    }
+  }
+
+  for (const id of ids) {
+    const oldQ = oldM.get(id) || 0;
+    const newQ = newM.get(id) || 0;
+    const inc = oldQ - newQ;
+    if (inc === 0) continue;
+    await InventoryItem.updateOne({ _id: id }, { $inc: { quantityOnHand: inc } });
+  }
+  return { ok: true };
+}
+
+async function buildSaleLinesFromParsed(parsed) {
+  const saleLines = [];
+  let total = 0;
+  for (const line of parsed.lines) {
+    if (line.fromStock) {
+      const item = await InventoryItem.findById(line.inventoryItem);
+      if (!item) return { error: 'صنف غير موجود في المخزون' };
+      const lineTotal = line.quantity * line.unitPrice;
+      total += lineTotal;
+      saleLines.push({
+        fromStock: true,
+        inventoryItem: line.inventoryItem,
+        itemCode: item.itemCode,
+        itemName: item.name,
+        quantity: line.quantity,
+        unitPrice: line.unitPrice,
+        lineTotal,
+      });
+    } else {
+      const lineTotal = line.quantity * line.unitPrice;
+      total += lineTotal;
+      saleLines.push({
+        fromStock: false,
+        inventoryItem: null,
+        itemCode: line.itemCode || '—',
+        itemName: line.itemName,
+        quantity: line.quantity,
+        unitPrice: line.unitPrice,
+        lineTotal,
+      });
+    }
+  }
+  return { saleLines, subtotal: Math.round(total * 100) / 100 };
+}
+
 async function dashboard(req, res) {
   const [itemsCount, lowStock, quotesCount, mySalesCount] = await Promise.all([
     InventoryItem.countDocuments(),
@@ -480,6 +580,8 @@ async function quotesList(req, res) {
       totalPages: Math.max(1, Math.ceil(total / QUOTE_LIMIT)),
       query: req.query,
       quote: null,
+      listUserId: req.session.userId,
+      listIsAdmin: req.session.role === 'admin',
     })
   );
 }
@@ -610,6 +712,9 @@ async function quotesShow(req, res) {
     req.flash('error', 'المستند غير موجود');
     return res.redirect('/quotes');
   }
+  const createdId = quote.createdBy && quote.createdBy._id ? String(quote.createdBy._id) : String(quote.createdBy || '');
+  const canMutateQuote =
+    req.session.role === 'admin' || createdId === String(req.session.userId);
   res.render(
     'sections/quotes',
     shell({
@@ -621,6 +726,7 @@ async function quotesShow(req, res) {
       page: 1,
       totalPages: 1,
       query: {},
+      canMutateQuote,
     })
   );
 }
@@ -659,6 +765,154 @@ async function quotesXlsx(req, res) {
     req.flash('error', 'تعذر إنشاء ملف Excel');
     res.redirect(`/quotes/${req.params.id}`);
   }
+}
+
+async function quotesEditForm(req, res) {
+  const filter = quoteAccessFilter(req);
+  if (!filter) {
+    req.flash('error', 'المستند غير موجود');
+    return res.redirect('/quotes');
+  }
+  const quote = await Quote.findOne(filter).populate('createdBy', 'fullName username').lean();
+  if (!quote) {
+    req.flash('error', 'المستند غير موجود أو ليس لديك صلاحية التعديل');
+    return res.redirect('/quotes');
+  }
+  const settings = await getOrCreateSettings();
+  const mode = quote.type === 'request' ? 'edit-request' : 'edit-stock';
+  if (quote.type === 'from_stock') {
+    quote.lines = await Promise.all(
+      quote.lines.map(async (l) => {
+        if (!l.inventoryItem) return { ...l, stockOnHandForMax: null };
+        const inv = await InventoryItem.findById(l.inventoryItem).lean();
+        return { ...l, stockOnHandForMax: inv ? inv.quantityOnHand : 0 };
+      })
+    );
+  }
+  res.render(
+    'sections/quotes',
+    shell({
+      section: 'quotes',
+      title: quote.type === 'request' ? 'تعديل طلب تسعير' : 'تعديل عرض السعر',
+      mode,
+      quote,
+      quotes: [],
+      page: 1,
+      totalPages: 1,
+      query: {},
+      defaultQuoteNotes: settings.defaultQuoteNotes || '',
+    })
+  );
+}
+
+async function quotesUpdate(req, res) {
+  const filter = quoteAccessFilter(req);
+  if (!filter) {
+    req.flash('error', 'المستند غير موجود');
+    return res.redirect('/quotes');
+  }
+  const doc = await Quote.findOne(filter);
+  if (!doc) {
+    req.flash('error', 'المستند غير موجود أو ليس لديك صلاحية التعديل');
+    return res.redirect('/quotes');
+  }
+  const id = req.params.id;
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    req.flash('error', errors.array().map((e) => e.msg).join(' — '));
+    return res.redirect(`/quotes/${id}/edit`);
+  }
+  if (doc.type === 'request') {
+    const parsed = parseQuoteLinesJson(req.body.linesJson, 'request');
+    if (parsed.error) {
+      req.flash('error', parsed.error);
+      return res.redirect(`/quotes/${id}/edit`);
+    }
+    await Quote.updateOne(
+      { _id: doc._id },
+      {
+        $set: {
+          customerName: req.body.customerName.trim(),
+          customerPhone: (req.body.customerPhone || '').trim(),
+          lines: parsed.lines,
+          subtotal: 0,
+          total: 0,
+          notes: (req.body.notes || '').trim(),
+          vat14Applied: false,
+          vat14Amount: 0,
+          noticeDiscountApplied: false,
+          noticeDiscountAmount: 0,
+        },
+      }
+    );
+    req.flash('success', 'تم حفظ التعديلات');
+    return res.redirect(`/quotes/${id}`);
+  }
+  const parsed = parseQuoteLinesJson(req.body.linesJson, 'from_stock');
+  if (parsed.error) {
+    req.flash('error', parsed.error);
+    return res.redirect(`/quotes/${id}/edit`);
+  }
+  for (const line of parsed.lines) {
+    if (line.inventoryItem) {
+      const item = await InventoryItem.findById(line.inventoryItem);
+      if (!item) {
+        req.flash('error', 'صنف غير موجود في المخزون');
+        return res.redirect(`/quotes/${id}/edit`);
+      }
+      if (line.quantity > item.quantityOnHand) {
+        req.flash('error', `الكمية المتاحة للصنف ${item.name} غير كافية`);
+        return res.redirect(`/quotes/${id}/edit`);
+      }
+    }
+  }
+  let lineSum = 0;
+  const lines = parsed.lines.map((l) => {
+    const lineTotal = Number(l.quantity) * Number(l.price || 0);
+    lineSum += lineTotal;
+    return { ...l, itemCode: l.itemCode || '' };
+  });
+  const subtotal = Math.round(lineSum * 100) / 100;
+  const { vat14Applied, noticeDiscountApplied } = parseVat14AndNoticeDiscount(req.body);
+  const { vat14Amount, noticeDiscountAmount, finalTotal } = computeSubtotalAdjustments(
+    subtotal,
+    vat14Applied,
+    noticeDiscountApplied
+  );
+  await Quote.updateOne(
+    { _id: doc._id },
+    {
+      $set: {
+        customerName: req.body.customerName.trim(),
+        customerPhone: (req.body.customerPhone || '').trim(),
+        lines,
+        subtotal,
+        vat14Applied,
+        vat14Amount,
+        noticeDiscountApplied,
+        noticeDiscountAmount,
+        total: finalTotal,
+        notes: (req.body.notes || '').trim(),
+      },
+    }
+  );
+  req.flash('success', 'تم حفظ التعديلات');
+  return res.redirect(`/quotes/${id}`);
+}
+
+async function quotesDelete(req, res) {
+  const filter = quoteAccessFilter(req);
+  if (!filter) {
+    req.flash('error', 'المستند غير موجود');
+    return res.redirect('/quotes');
+  }
+  const r = await Quote.deleteOne(filter);
+  if (r.deletedCount === 0) {
+    req.flash('error', 'تعذر الحذف');
+    return res.redirect('/quotes');
+  }
+  req.flash('success', 'تم حذف بيان الأسعار');
+  res.redirect('/quotes');
 }
 
 function parseSaleLinesJson(raw) {
@@ -741,6 +995,7 @@ async function salesList(req, res) {
       isAdmin: req.session.role === 'admin',
       sale: null,
       searchQ: q,
+      listUserId: req.session.userId,
     })
   );
 }
@@ -883,6 +1138,164 @@ async function salesCreate(req, res) {
   }
 }
 
+async function salesEditForm(req, res) {
+  const filter = saleAccessFilter(req);
+  if (!filter) {
+    req.flash('error', 'المبيعة غير موجودة');
+    return res.redirect('/sales');
+  }
+  const sale = await Sale.findOne(filter).populate('createdBy', 'fullName username').lean();
+  if (!sale) {
+    req.flash('error', 'المبيعة غير موجودة أو ليس لديك صلاحية التعديل');
+    return res.redirect('/sales');
+  }
+  const linesAug = await Promise.all(
+    sale.lines.map(async (line) => {
+      if (line.fromStock && line.inventoryItem) {
+        const inv = await InventoryItem.findById(line.inventoryItem).lean();
+        return {
+          ...line,
+          maxQtyForEdit: inv ? inv.quantityOnHand + line.quantity : line.quantity,
+        };
+      }
+      return { ...line, maxQtyForEdit: null };
+    })
+  );
+  sale.lines = linesAug;
+  const soldAtLocal = new Date(sale.soldAt);
+  const pad = (n) => String(n).padStart(2, '0');
+  const soldAtInputValue = `${soldAtLocal.getFullYear()}-${pad(soldAtLocal.getMonth() + 1)}-${pad(soldAtLocal.getDate())}T${pad(soldAtLocal.getHours())}:${pad(soldAtLocal.getMinutes())}`;
+  res.render(
+    'sections/sales',
+    shell({
+      section: 'sales',
+      title: 'تعديل مبيعة',
+      mode: 'edit',
+      sale,
+      sales: [],
+      page: 1,
+      totalPages: 1,
+      isAdmin: req.session.role === 'admin',
+      searchQ: '',
+      salePaymentMethods: SALE_PAYMENT_METHODS,
+      salePaymentDisplay: salePaymentLabel(sale.paymentMethod),
+      soldAtInputValue,
+    })
+  );
+}
+
+async function salesUpdate(req, res) {
+  const filter = saleAccessFilter(req);
+  if (!filter) {
+    req.flash('error', 'المبيعة غير موجودة');
+    return res.redirect('/sales');
+  }
+  const sale = await Sale.findOne(filter);
+  if (!sale) {
+    req.flash('error', 'المبيعة غير موجودة أو ليس لديك صلاحية التعديل');
+    return res.redirect('/sales');
+  }
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    req.flash('error', errors.array().map((e) => e.msg).join(' — '));
+    return res.redirect(`/sales/${req.params.id}/edit`);
+  }
+  const parsed = parseSaleLinesJson(req.body.linesJson);
+  if (parsed.error) {
+    req.flash('error', parsed.error);
+    return res.redirect(`/sales/${req.params.id}/edit`);
+  }
+  const dNum = req.body.disbursementNumber.trim();
+  const dup = await Sale.findOne({
+    disbursementNumber: dNum,
+    _id: { $ne: sale._id },
+  }).lean();
+  if (dup) {
+    req.flash('error', 'رقم إذن الصرف مستخدم في مبيعة أخرى');
+    return res.redirect(`/sales/${sale._id}/edit`);
+  }
+  const built = await buildSaleLinesFromParsed(parsed);
+  if (built.error) {
+    req.flash('error', built.error);
+    return res.redirect(`/sales/${sale._id}/edit`);
+  }
+  const { saleLines, subtotal } = built;
+  const oldLinesSnapshot = sale.lines.map((l) => ({
+    fromStock: l.fromStock,
+    inventoryItem: l.inventoryItem,
+    quantity: l.quantity,
+  }));
+  let deltaResult = await applySaleStockDelta(oldLinesSnapshot, saleLines);
+  if (deltaResult.error) {
+    req.flash('error', deltaResult.error);
+    return res.redirect(`/sales/${sale._id}/edit`);
+  }
+  const { vat14Applied, noticeDiscountApplied } = parseVat14AndNoticeDiscount(req.body);
+  const { vat14Amount, noticeDiscountAmount, finalTotal } = computeSubtotalAdjustments(
+    subtotal,
+    vat14Applied,
+    noticeDiscountApplied
+  );
+  let soldAt = sale.soldAt;
+  if ((req.body.soldAt || '').trim()) {
+    const d = new Date(req.body.soldAt);
+    if (!Number.isNaN(d.getTime())) soldAt = d;
+  }
+  try {
+    sale.customerName = req.body.customerName.trim();
+    sale.disbursementNumber = dNum;
+    sale.customerNumber = (req.body.customerNumber || '').trim();
+    sale.paymentMethod = req.body.paymentMethod.trim();
+    sale.paymentNote = (req.body.paymentNote || '').trim();
+    sale.lines = saleLines;
+    sale.subtotal = subtotal;
+    sale.vat14Applied = vat14Applied;
+    sale.vat14Amount = vat14Amount;
+    sale.noticeDiscountApplied = noticeDiscountApplied;
+    sale.noticeDiscountAmount = noticeDiscountAmount;
+    sale.total = finalTotal;
+    sale.soldAt = soldAt;
+    await sale.save();
+  } catch (e) {
+    console.error(e);
+    try {
+      await applySaleStockDelta(saleLines, oldLinesSnapshot);
+    } catch (_) {}
+    req.flash('error', 'تعذر حفظ المبيعة');
+    return res.redirect(`/sales/${sale._id}/edit`);
+  }
+  req.flash('success', 'تم حفظ تعديلات المبيعة');
+  res.redirect(`/sales/${sale._id}`);
+}
+
+async function salesDelete(req, res) {
+  const filter = saleAccessFilter(req);
+  if (!filter) {
+    req.flash('error', 'المبيعة غير موجودة');
+    return res.redirect('/sales');
+  }
+  const sale = await Sale.findOne(filter);
+  if (!sale) {
+    req.flash('error', 'المبيعة غير موجودة أو ليس لديك صلاحية التعديل');
+    return res.redirect('/sales');
+  }
+  for (const line of sale.lines) {
+    if (line.fromStock && line.inventoryItem) {
+      try {
+        await InventoryItem.updateOne(
+          { _id: line.inventoryItem },
+          { $inc: { quantityOnHand: line.quantity } }
+        );
+      } catch (e) {
+        console.error(e);
+      }
+    }
+  }
+  await Sale.deleteOne({ _id: sale._id });
+  req.flash('success', 'تم حذف المبيعة وإرجاع كميات المخزن للبنود المرتبطة');
+  res.redirect('/sales');
+}
+
 async function salesShow(req, res) {
   const filter = { _id: req.params.id };
   if (req.session.role !== 'admin') filter.createdBy = req.session.userId;
@@ -891,6 +1304,9 @@ async function salesShow(req, res) {
     req.flash('error', 'المبيعة غير موجودة');
     return res.redirect('/sales');
   }
+  const createdId = sale.createdBy && sale.createdBy._id ? String(sale.createdBy._id) : String(sale.createdBy || '');
+  const canMutateSale =
+    req.session.role === 'admin' || createdId === String(req.session.userId);
   res.render(
     'sections/sales',
     shell({
@@ -905,6 +1321,7 @@ async function salesShow(req, res) {
       searchQ: '',
       salePaymentMethods: SALE_PAYMENT_METHODS,
       salePaymentDisplay: salePaymentLabel(sale.paymentMethod),
+      canMutateSale,
     })
   );
 }
@@ -1049,9 +1466,15 @@ module.exports = {
   quotesShow,
   quotesPdf,
   quotesXlsx,
+  quotesEditForm,
+  quotesUpdate,
+  quotesDelete,
   salesList,
   salesNewForm,
   salesCreate,
+  salesEditForm,
+  salesUpdate,
+  salesDelete,
   salesShow,
   salesPdf,
   settingsShow,
