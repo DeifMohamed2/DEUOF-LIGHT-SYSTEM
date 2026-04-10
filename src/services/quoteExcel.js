@@ -81,6 +81,25 @@ async function quoteToWorkbook(quote) {
 
   if (showPrice && quote.total != null) {
     row += 1;
+    if (Number(quote.manualDiscountAmount) > 0) {
+      let mdPct =
+        quote.manualDiscountPercent != null && Number(quote.manualDiscountPercent) > 0
+          ? Number(quote.manualDiscountPercent)
+          : null;
+      if (
+        (mdPct == null || mdPct <= 0) &&
+        Number(quote.subtotal) > 0
+      ) {
+        mdPct =
+          Math.round(
+            (Number(quote.manualDiscountAmount) / Number(quote.subtotal)) * 10000
+          ) / 100;
+      }
+      ws.getCell(`D${row}`).value =
+        mdPct != null && mdPct > 0 ? `خصم إضافي (${mdPct}٪)` : 'خصم إضافي';
+      ws.getCell(`E${row}`).value = Number(quote.manualDiscountAmount);
+      row += 1;
+    }
     if (quote.vat14Applied) {
       ws.getCell(`D${row}`).value = 'ضريبة القيمة المضافة (١٤٪)';
       ws.getCell(`E${row}`).value = Number(quote.vat14Amount || 0);
@@ -92,7 +111,7 @@ async function quoteToWorkbook(quote) {
       row += 1;
     }
     const grandLabel =
-      quote.vat14Applied || quote.noticeDiscountApplied
+      quote.vat14Applied || quote.noticeDiscountApplied || Number(quote.manualDiscountAmount) > 0
         ? 'الإجمالي النهائي (ج.م)'
         : 'الإجمالي (ج.م)';
     ws.getCell(`D${row}`).value = grandLabel;

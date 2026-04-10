@@ -73,9 +73,15 @@
     </table>
     </div>
     <div id="sale-totals-wrap-edit" class="sale-totals-preview sale-totals-preview--rtl" hidden>
+      <p class="total-line muted" id="sale-line-manual-edit" hidden>خصم إضافي (<strong id="tv-manual-pct-edit">0</strong>٪): <strong id="tv-manual-edit">0.00</strong> ج.م</p>
       <p class="total-line muted" id="sale-line-vat-edit" hidden>ضريبة القيمة المضافة (١٤٪): <strong id="tv-vat-edit">0.00</strong> ج.م</p>
       <p class="total-line muted" id="sale-line-notice-edit" hidden>خصم ١٪ إشعار: <strong id="tv-notice-edit">0.00</strong> ج.م</p>
       <p class="total-line"><span id="tv-final-label-edit">الإجمالي</span>: <strong id="tv-final-edit">0.00</strong> ج.م</p>
+      <div class="form__field-discount">
+        <label class="form__label" for="sale-manual-discount-edit">خصم إضافي (%)</label>
+        <% var _smdp = sale.manualDiscountPercent; if ((_smdp == null || _smdp === '') && Number(sale.subtotal) > 0 && Number(sale.manualDiscountAmount || 0) > 0) { _smdp = Math.round((Number(sale.manualDiscountAmount) / Number(sale.subtotal)) * 10000) / 100; } %>
+        <input class="form__input form__input--discount" type="number" name="manualDiscountPercent" id="sale-manual-discount-edit" min="0" max="100" step="0.01" value="<%= (_smdp != null && _smdp !== '' && Number(_smdp) > 0) ? (Number(_smdp) % 1 === 0 ? String(Number(_smdp)) : Number(_smdp).toFixed(2)) : '' %>" placeholder="0" inputmode="decimal" autocomplete="off">
+      </div>
     </div>
     <div class="form__actions">
       <button type="submit" class="btn btn--primary">حفظ التعديلات</button>
@@ -109,10 +115,18 @@
   var tvFinalLabel = document.getElementById('tv-final-label-edit');
   var vatCb = document.getElementById('sale-vat14-edit');
   var noticeCb = document.getElementById('sale-notice-discount-edit');
+  var manualIn = document.getElementById('sale-manual-discount-edit');
+  var lineManual = document.getElementById('sale-line-manual-edit');
+  var tvManual = document.getElementById('tv-manual-edit');
+  var tvManualPct = document.getElementById('tv-manual-pct-edit');
   var btnManual = document.getElementById('sale-add-manual-edit');
   var VAT = 0.14;
   var NOTICE_DISCOUNT = 0.01;
   if (!body || !form || !hidden) return;
+  function fmtPct(n) {
+    var x = Math.round(Math.min(100, Math.max(0, Number(n) || 0)) * 100) / 100;
+    return (x % 1 === 0 ? String(x) : x.toFixed(2));
+  }
   function recalc() {
     var sum = 0;
     Array.prototype.forEach.call(body.querySelectorAll('tr'), function (tr) {
@@ -128,18 +142,24 @@
     if (!hasRows) return;
     var vatOn = vatCb && vatCb.checked;
     var noticeOn = noticeCb && noticeCb.checked;
+    var manualPct = manualIn ? Math.min(100, Math.max(0, Number(manualIn.value) || 0)) : 0;
+    var manualApplied = Math.round((sum * manualPct) / 100 * 100) / 100;
     var vatAmt = vatOn ? Math.round(sum * VAT * 100) / 100 : 0;
     var noticeAmt = noticeOn ? Math.round(sum * NOTICE_DISCOUNT * 100) / 100 : 0;
-    var finalVal = Math.max(0, Math.round((sum + vatAmt - noticeAmt) * 100) / 100);
+    var finalVal = Math.max(0, Math.round((sum - manualApplied + vatAmt - noticeAmt) * 100) / 100);
     if (lineVat) lineVat.hidden = !vatOn;
     if (tvVat) tvVat.textContent = vatAmt.toFixed(2);
     if (lineNotice) lineNotice.hidden = !noticeOn;
     if (tvNotice) tvNotice.textContent = noticeAmt.toFixed(2);
+    if (lineManual) lineManual.hidden = manualPct <= 0;
+    if (tvManualPct) tvManualPct.textContent = fmtPct(manualPct);
+    if (tvManual) tvManual.textContent = manualApplied.toFixed(2);
     if (tvFinal) tvFinal.textContent = finalVal.toFixed(2);
-    if (tvFinalLabel) tvFinalLabel.textContent = vatOn || noticeOn ? 'الإجمالي النهائي' : 'الإجمالي';
+    if (tvFinalLabel) tvFinalLabel.textContent = vatOn || noticeOn || manualPct > 0 ? 'الإجمالي النهائي' : 'الإجمالي';
   }
   if (vatCb) vatCb.addEventListener('change', recalc);
   if (noticeCb) noticeCb.addEventListener('change', recalc);
+  if (manualIn) manualIn.addEventListener('input', recalc);
   function esc(s) {
     return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
   }

@@ -73,6 +73,18 @@ async function renderSalePdfHtml(sale) {
   const vatAmount = vatApplied && sale.vat14Amount != null ? Number(sale.vat14Amount) : 0;
   const noticeAmount =
     noticeApplied && sale.noticeDiscountAmount != null ? Number(sale.noticeDiscountAmount) : 0;
+  const manualAmount = Number(sale.manualDiscountAmount) > 0 ? Number(sale.manualDiscountAmount) : 0;
+  let manualPct =
+    sale.manualDiscountPercent != null && Number(sale.manualDiscountPercent) > 0
+      ? Number(sale.manualDiscountPercent)
+      : null;
+  if (
+    manualAmount > 0 &&
+    (manualPct == null || manualPct <= 0) &&
+    Number(sale.subtotal) > 0
+  ) {
+    manualPct = Math.round((manualAmount / Number(sale.subtotal)) * 10000) / 100;
+  }
   const grandTotal = Number(sale.total);
 
   const rows = sale.lines
@@ -88,6 +100,13 @@ async function renderSalePdfHtml(sale) {
     .join('');
 
   const saleExtraLines = [];
+  if (manualAmount > 0) {
+    saleExtraLines.push(
+      manualPct != null && manualPct > 0
+        ? `<p><strong>خصم إضافي (${manualPct}%):</strong> ${manualAmount.toFixed(2)} ج.م</p>`
+        : `<p><strong>خصم إضافي:</strong> ${manualAmount.toFixed(2)} ج.م</p>`
+    );
+  }
   if (vatApplied) {
     saleExtraLines.push(
       `<p><strong>ضريبة القيمة المضافة (١٤٪):</strong> ${vatAmount.toFixed(2)} ج.م</p>`

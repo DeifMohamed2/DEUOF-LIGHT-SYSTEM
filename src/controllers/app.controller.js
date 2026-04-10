@@ -35,16 +35,45 @@ function parseVat14AndNoticeDiscount(body) {
   return { vat14Applied, noticeDiscountApplied };
 }
 
-function computeSubtotalAdjustments(subtotal, vat14Applied, noticeDiscountApplied) {
-  const vat14Amount = vat14Applied ? Math.round(subtotal * SALE_VAT_RATE * 100) / 100 : 0;
+/** نسبة خصم إضافي (٠–١٠٠٪) من مجموع البنود؛ ١٤٪ ضريبة و١٪ إشعار يُحسبان على مجموع البنود (قبل الخصم الإضافي) */
+function parseManualDiscountPercent(body) {
+  const raw = body.manualDiscountPercent;
+  if (raw == null || String(raw).trim() === '') return 0;
+  const n = Number(String(raw).replace(',', '.').trim());
+  if (!Number.isFinite(n) || n < 0) return 0;
+  return Math.min(100, Math.round(n * 100) / 100);
+}
+
+function computeSubtotalAdjustments(
+  subtotal,
+  vat14Applied,
+  noticeDiscountApplied,
+  manualDiscountPercentDesired = 0
+) {
+  const manualDiscountPercent = Math.min(
+    100,
+    Math.max(0, manualDiscountPercentDesired)
+  );
+  const manualDiscountAmount = Math.round((subtotal * manualDiscountPercent) / 100 * 100) / 100;
+  const vat14Amount = vat14Applied
+    ? Math.round(subtotal * SALE_VAT_RATE * 100) / 100
+    : 0;
   const noticeDiscountAmount = noticeDiscountApplied
     ? Math.round(subtotal * NOTICE_DISCOUNT_RATE * 100) / 100
     : 0;
   const finalTotal = Math.max(
     0,
-    Math.round((subtotal + vat14Amount - noticeDiscountAmount) * 100) / 100
+    Math.round(
+      (subtotal - manualDiscountAmount + vat14Amount - noticeDiscountAmount) * 100
+    ) / 100
   );
-  return { vat14Amount, noticeDiscountAmount, finalTotal };
+  return {
+    manualDiscountPercent,
+    manualDiscountAmount,
+    vat14Amount,
+    noticeDiscountAmount,
+    finalTotal,
+  };
 }
 
 /** Admin أو منشئ السجل فقط يمكنه التعديل/الحذف */
@@ -679,11 +708,14 @@ async function quotesCreateFromStock(req, res) {
   });
   const subtotal = Math.round(lineSum * 100) / 100;
   const { vat14Applied, noticeDiscountApplied } = parseVat14AndNoticeDiscount(req.body);
-  const { vat14Amount, noticeDiscountAmount, finalTotal } = computeSubtotalAdjustments(
-    subtotal,
-    vat14Applied,
-    noticeDiscountApplied
-  );
+  const manualPct = parseManualDiscountPercent(req.body);
+  const {
+    manualDiscountPercent,
+    manualDiscountAmount,
+    vat14Amount,
+    noticeDiscountAmount,
+    finalTotal,
+  } = computeSubtotalAdjustments(subtotal, vat14Applied, noticeDiscountApplied, manualPct);
   await Quote.create({
     type: 'from_stock',
     customerName: req.body.customerName.trim(),
@@ -694,6 +726,8 @@ async function quotesCreateFromStock(req, res) {
     vat14Amount,
     noticeDiscountApplied,
     noticeDiscountAmount,
+    manualDiscountPercent,
+    manualDiscountAmount,
     total: finalTotal,
     notes: (req.body.notes || '').trim(),
     createdBy: req.session.userId,
@@ -842,6 +876,8 @@ async function quotesUpdate(req, res) {
           vat14Amount: 0,
           noticeDiscountApplied: false,
           noticeDiscountAmount: 0,
+          manualDiscountPercent: 0,
+          manualDiscountAmount: 0,
         },
       }
     );
@@ -874,11 +910,14 @@ async function quotesUpdate(req, res) {
   });
   const subtotal = Math.round(lineSum * 100) / 100;
   const { vat14Applied, noticeDiscountApplied } = parseVat14AndNoticeDiscount(req.body);
-  const { vat14Amount, noticeDiscountAmount, finalTotal } = computeSubtotalAdjustments(
-    subtotal,
-    vat14Applied,
-    noticeDiscountApplied
-  );
+  const manualPct = parseManualDiscountPercent(req.body);
+  const {
+    manualDiscountPercent,
+    manualDiscountAmount,
+    vat14Amount,
+    noticeDiscountAmount,
+    finalTotal,
+  } = computeSubtotalAdjustments(subtotal, vat14Applied, noticeDiscountApplied, manualPct);
   await Quote.updateOne(
     { _id: doc._id },
     {
@@ -891,6 +930,8 @@ async function quotesUpdate(req, res) {
         vat14Amount,
         noticeDiscountApplied,
         noticeDiscountAmount,
+        manualDiscountPercent,
+        manualDiscountAmount,
         total: finalTotal,
         notes: (req.body.notes || '').trim(),
       },
@@ -1099,11 +1140,14 @@ async function salesCreate(req, res) {
     }
     const subtotal = Math.round(total * 100) / 100;
     const { vat14Applied, noticeDiscountApplied } = parseVat14AndNoticeDiscount(req.body);
-    const { vat14Amount, noticeDiscountAmount, finalTotal } = computeSubtotalAdjustments(
-      subtotal,
-      vat14Applied,
-      noticeDiscountApplied
-    );
+    const manualPct = parseManualDiscountPercent(req.body);
+    const {
+      manualDiscountPercent,
+      manualDiscountAmount,
+      vat14Amount,
+      noticeDiscountAmount,
+      finalTotal,
+    } = computeSubtotalAdjustments(subtotal, vat14Applied, noticeDiscountApplied, manualPct);
     await Sale.create({
       customerName: req.body.customerName.trim(),
       disbursementNumber: (req.body.disbursementNumber || '').trim(),
@@ -1115,6 +1159,8 @@ async function salesCreate(req, res) {
       vat14Amount,
       noticeDiscountApplied,
       noticeDiscountAmount,
+      manualDiscountPercent,
+      manualDiscountAmount,
       total: finalTotal,
       soldAt: new Date(),
       paymentNote: (req.body.paymentNote || '').trim(),
@@ -1231,11 +1277,14 @@ async function salesUpdate(req, res) {
     return res.redirect(`/sales/${sale._id}/edit`);
   }
   const { vat14Applied, noticeDiscountApplied } = parseVat14AndNoticeDiscount(req.body);
-  const { vat14Amount, noticeDiscountAmount, finalTotal } = computeSubtotalAdjustments(
-    subtotal,
-    vat14Applied,
-    noticeDiscountApplied
-  );
+  const manualPct = parseManualDiscountPercent(req.body);
+  const {
+    manualDiscountPercent,
+    manualDiscountAmount,
+    vat14Amount,
+    noticeDiscountAmount,
+    finalTotal,
+  } = computeSubtotalAdjustments(subtotal, vat14Applied, noticeDiscountApplied, manualPct);
   let soldAt = sale.soldAt;
   if ((req.body.soldAt || '').trim()) {
     const d = new Date(req.body.soldAt);
@@ -1253,6 +1302,8 @@ async function salesUpdate(req, res) {
     sale.vat14Amount = vat14Amount;
     sale.noticeDiscountApplied = noticeDiscountApplied;
     sale.noticeDiscountAmount = noticeDiscountAmount;
+    sale.manualDiscountPercent = manualDiscountPercent;
+    sale.manualDiscountAmount = manualDiscountAmount;
     sale.total = finalTotal;
     sale.soldAt = soldAt;
     await sale.save();

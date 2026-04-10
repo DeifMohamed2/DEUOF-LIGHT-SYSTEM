@@ -187,9 +187,14 @@
     </div>
     <div class="stock-quote-totals" id="stock-quote-totals-wrap" hidden>
       <div class="sale-totals-preview sale-totals-preview--rtl">
+        <p class="total-line muted" id="stock-line-manual" hidden>خصم إضافي (<strong id="stock-tv-manual-pct">0</strong>٪): <strong id="stock-tv-manual">0.00</strong> ج.م</p>
         <p class="total-line muted" id="stock-line-vat" hidden>ضريبة القيمة المضافة (١٤٪): <strong id="stock-tv-vat">0.00</strong> ج.م</p>
         <p class="total-line muted" id="stock-line-notice" hidden>خصم ١٪ إشعار: <strong id="stock-tv-notice">0.00</strong> ج.م</p>
         <p class="total-line total-line--stock-preview"><span id="stock-tv-final-label">الإجمالي</span>: <strong id="stock-tv-final">0.00</strong> ج.م</p>
+      </div>
+      <div class="form__field-discount">
+        <label class="form__label" for="quote-manual-discount">خصم إضافي (%)</label>
+        <input class="form__input form__input--discount" type="number" name="manualDiscountPercent" id="quote-manual-discount" min="0" max="100" step="0.01" value="" placeholder="0" inputmode="decimal" autocomplete="off">
       </div>
       <p class="muted stock-quote-totals-hint">بعد الحفظ يظهر المجموع في صفحة العرض وPDF وExcel.</p>
     </div>
@@ -207,6 +212,7 @@
   var btnManual = document.getElementById('stock-add-manual');
   var vatCb = document.getElementById('quote-stock-vat14');
   var noticeCb = document.getElementById('quote-stock-notice-discount');
+  var manualIn = document.getElementById('quote-manual-discount');
   var VAT = 0.14;
   var NOTICE_DISCOUNT = 0.01;
   if (!body || !form || !hidden) return;
@@ -217,6 +223,10 @@
     var x = Number(n);
     if (!Number.isFinite(x)) x = 0;
     return (Math.round(x * 100) / 100).toFixed(2);
+  }
+  function fmtPct(n) {
+    var x = Math.round(Math.min(100, Math.max(0, Number(n) || 0)) * 100) / 100;
+    return (x % 1 === 0 ? String(x) : x.toFixed(2));
   }
   function updateRowLineTotal(tr) {
     var qIn = tr.querySelector('[data-f=quantity]');
@@ -247,18 +257,26 @@
     var tvNotice = document.getElementById('stock-tv-notice');
     var tvFinal = document.getElementById('stock-tv-final');
     var tvLabel = document.getElementById('stock-tv-final-label');
+    var lineManual = document.getElementById('stock-line-manual');
+    var tvManual = document.getElementById('stock-tv-manual');
+    var tvManualPct = document.getElementById('stock-tv-manual-pct');
     if (wrap) wrap.hidden = rows.length === 0;
     var vatOn = vatCb && vatCb.checked;
     var noticeOn = noticeCb && noticeCb.checked;
+    var manualPct = manualIn ? Math.min(100, Math.max(0, Number(manualIn.value) || 0)) : 0;
+    var manualApplied = Math.round((sum * manualPct) / 100 * 100) / 100;
     var vatAmt = vatOn ? Math.round(sum * VAT * 100) / 100 : 0;
     var noticeAmt = noticeOn ? Math.round(sum * NOTICE_DISCOUNT * 100) / 100 : 0;
-    var finalVal = Math.max(0, Math.round((sum + vatAmt - noticeAmt) * 100) / 100);
+    var finalVal = Math.max(0, Math.round((sum - manualApplied + vatAmt - noticeAmt) * 100) / 100);
     if (lineVat) lineVat.hidden = !vatOn;
     if (tvVat) tvVat.textContent = fmtMoney(vatAmt);
     if (lineNotice) lineNotice.hidden = !noticeOn;
     if (tvNotice) tvNotice.textContent = fmtMoney(noticeAmt);
+    if (lineManual) lineManual.hidden = manualPct <= 0;
+    if (tvManualPct) tvManualPct.textContent = fmtPct(manualPct);
+    if (tvManual) tvManual.textContent = fmtMoney(manualApplied);
     if (tvFinal) tvFinal.textContent = fmtMoney(finalVal);
-    if (tvLabel) tvLabel.textContent = vatOn || noticeOn ? 'الإجمالي النهائي' : 'الإجمالي';
+    if (tvLabel) tvLabel.textContent = vatOn || noticeOn || manualPct > 0 ? 'الإجمالي النهائي' : 'الإجمالي';
   }
   if (vatCb) {
     vatCb.addEventListener('change', function () {
@@ -272,6 +290,7 @@
       refreshStockGrandTotal();
     });
   }
+  if (manualIn) manualIn.addEventListener('input', refreshStockGrandTotal);
   toggleStockVatHints();
   function bindRemove(tr) {
     tr.querySelector('.rm').onclick = function () {
@@ -510,9 +529,14 @@
   </table>
   </div>
   <% if (quote.type === 'from_stock') { %>
-    <% var quoteHasAdj = quote.vat14Applied || quote.noticeDiscountApplied; %>
+    <% var quoteManualAmt = Number(quote.manualDiscountAmount || 0); %>
+    <% var quoteManualPct = quote.manualDiscountPercent != null && quote.manualDiscountPercent !== '' ? Number(quote.manualDiscountPercent) : (Number(quote.subtotal) > 0 && quoteManualAmt > 0 ? Math.round((quoteManualAmt / Number(quote.subtotal)) * 10000) / 100 : 0); %>
+    <% var quoteHasAdj = quote.vat14Applied || quote.noticeDiscountApplied || quoteManualAmt > 0; %>
     <% if (quoteHasAdj) { %>
     <div class="sale-totals-preview sale-totals-preview--rtl">
+      <% if (quoteManualAmt > 0) { %>
+      <p class="total-line muted">خصم إضافي (<%= quoteManualPct.toFixed(2) %>٪): <strong><%= quoteManualAmt.toFixed(2) %></strong> ج.م</p>
+      <% } %>
       <% if (quote.vat14Applied) { %>
       <p class="total-line muted">ضريبة القيمة المضافة (١٤٪): <strong><%= Number(quote.vat14Amount || 0).toFixed(2) %></strong> ج.م</p>
       <% } %>

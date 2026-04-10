@@ -138,9 +138,14 @@
     </table>
     </div>
     <div id="sale-totals-wrap" class="sale-totals-preview sale-totals-preview--rtl" hidden>
+      <p class="total-line sale-totals-preview__vat muted" id="sale-line-manual" hidden>خصم إضافي (<strong id="tv-manual-pct">0</strong>٪): <strong id="tv-manual">0.00</strong> ج.م</p>
       <p class="total-line sale-totals-preview__vat muted" id="sale-line-vat" hidden>ضريبة القيمة المضافة (١٤٪): <strong id="tv-vat">0.00</strong> ج.م</p>
       <p class="total-line sale-totals-preview__vat muted" id="sale-line-notice" hidden>خصم ١٪ إشعار: <strong id="tv-notice">0.00</strong> ج.م</p>
       <p class="total-line sale-totals-preview__final"><span id="tv-final-label">الإجمالي</span>: <strong id="tv-final">0.00</strong> ج.م</p>
+      <div class="form__field-discount">
+        <label class="form__label" for="sale-manual-discount">خصم إضافي (%)</label>
+        <input class="form__input form__input--discount" type="number" name="manualDiscountPercent" id="sale-manual-discount" min="0" max="100" step="0.01" value="" placeholder="0" inputmode="decimal" autocomplete="off">
+      </div>
     </div>
     <div class="form__actions">
       <button type="submit" class="btn btn--primary">تأكيد المبيعة</button>
@@ -162,10 +167,18 @@
   var tvFinalLabel = document.getElementById('tv-final-label');
   var vatCb = document.getElementById('sale-vat14');
   var noticeCb = document.getElementById('sale-notice-discount');
+  var manualIn = document.getElementById('sale-manual-discount');
+  var lineManual = document.getElementById('sale-line-manual');
+  var tvManual = document.getElementById('tv-manual');
+  var tvManualPct = document.getElementById('tv-manual-pct');
   var btnManual = document.getElementById('sale-add-manual');
   var VAT = 0.14;
   var NOTICE_DISCOUNT = 0.01;
   if (!body || !form || !hidden) return;
+  function fmtPct(n) {
+    var x = Math.round(Math.min(100, Math.max(0, Number(n) || 0)) * 100) / 100;
+    return (x % 1 === 0 ? String(x) : x.toFixed(2));
+  }
   function recalc() {
     var sum = 0;
     Array.prototype.forEach.call(body.querySelectorAll('tr'), function (tr) {
@@ -181,18 +194,24 @@
     if (!hasRows) return;
     var vatOn = vatCb && vatCb.checked;
     var noticeOn = noticeCb && noticeCb.checked;
+    var manualPct = manualIn ? Math.min(100, Math.max(0, Number(manualIn.value) || 0)) : 0;
+    var manualApplied = Math.round((sum * manualPct) / 100 * 100) / 100;
     var vatAmt = vatOn ? Math.round(sum * VAT * 100) / 100 : 0;
     var noticeAmt = noticeOn ? Math.round(sum * NOTICE_DISCOUNT * 100) / 100 : 0;
-    var finalVal = Math.max(0, Math.round((sum + vatAmt - noticeAmt) * 100) / 100);
+    var finalVal = Math.max(0, Math.round((sum - manualApplied + vatAmt - noticeAmt) * 100) / 100);
     if (lineVat) lineVat.hidden = !vatOn;
     if (tvVat) tvVat.textContent = vatAmt.toFixed(2);
     if (lineNotice) lineNotice.hidden = !noticeOn;
     if (tvNotice) tvNotice.textContent = noticeAmt.toFixed(2);
+    if (lineManual) lineManual.hidden = manualPct <= 0;
+    if (tvManualPct) tvManualPct.textContent = fmtPct(manualPct);
+    if (tvManual) tvManual.textContent = manualApplied.toFixed(2);
     if (tvFinal) tvFinal.textContent = finalVal.toFixed(2);
-    if (tvFinalLabel) tvFinalLabel.textContent = vatOn || noticeOn ? 'الإجمالي النهائي' : 'الإجمالي';
+    if (tvFinalLabel) tvFinalLabel.textContent = vatOn || noticeOn || manualPct > 0 ? 'الإجمالي النهائي' : 'الإجمالي';
   }
   if (vatCb) vatCb.addEventListener('change', recalc);
   if (noticeCb) noticeCb.addEventListener('change', recalc);
+  if (manualIn) manualIn.addEventListener('input', recalc);
   function esc(s) {
     return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
   }
@@ -303,7 +322,9 @@
 </div>
 <% var vatAppliedDetail = sale.vat14Applied === true; %>
 <% var noticeAppliedDetail = sale.noticeDiscountApplied === true; %>
-<% var saleHasAdjDetail = vatAppliedDetail || noticeAppliedDetail; %>
+<% var manualAmtDetail = Number(sale.manualDiscountAmount || 0); %>
+<% var manualPctDetail = sale.manualDiscountPercent != null && sale.manualDiscountPercent !== '' ? Number(sale.manualDiscountPercent) : (Number(sale.subtotal) > 0 && manualAmtDetail > 0 ? Math.round((manualAmtDetail / Number(sale.subtotal)) * 10000) / 100 : 0); %>
+<% var saleHasAdjDetail = vatAppliedDetail || noticeAppliedDetail || manualAmtDetail > 0; %>
 <div class="panel">
   <dl class="meta-list">
     <dt>اسم العميل</dt><dd><%= sale.customerName && String(sale.customerName).trim() ? sale.customerName : '—' %></dd>
@@ -311,6 +332,9 @@
     <dt>رقم العميل</dt><dd><%= sale.customerNumber && String(sale.customerNumber).trim() ? sale.customerNumber : '—' %></dd>
     <dt>طريقة الدفع</dt><dd><%= typeof salePaymentDisplay !== 'undefined' && salePaymentDisplay ? salePaymentDisplay : '—' %></dd>
     <dt>التاريخ</dt><dd><%= new Date(sale.soldAt).toLocaleString('ar-EG') %></dd>
+    <% if (manualAmtDetail > 0) { %>
+    <dt>خصم إضافي</dt><dd><%= manualPctDetail.toFixed(2) %>٪ — <%= manualAmtDetail.toFixed(2) %> ج.م</dd>
+    <% } %>
     <% if (vatAppliedDetail) { %>
     <dt>ضريبة القيمة المضافة (١٤٪)</dt><dd><%= Number(sale.vat14Amount || 0).toFixed(2) %> ج.م</dd>
     <% } %>

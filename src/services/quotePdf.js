@@ -114,8 +114,31 @@ async function renderQuotePdfHtml(quote) {
     quoteNoticeApplied && quote.noticeDiscountAmount != null
       ? Number(quote.noticeDiscountAmount)
       : 0;
+  const quoteManualAmount =
+    showPrice && Number(quote.manualDiscountAmount) > 0
+      ? Number(quote.manualDiscountAmount)
+      : 0;
+  let quoteManualPct =
+    quote.manualDiscountPercent != null && Number(quote.manualDiscountPercent) > 0
+      ? Number(quote.manualDiscountPercent)
+      : null;
+  if (
+    quoteManualAmount > 0 &&
+    (quoteManualPct == null || quoteManualPct <= 0) &&
+    Number(quote.subtotal) > 0
+  ) {
+    quoteManualPct =
+      Math.round((quoteManualAmount / Number(quote.subtotal)) * 10000) / 100;
+  }
 
   const totalExtraLines = [];
+  if (quoteManualAmount > 0) {
+    const manualLine =
+      quoteManualPct != null && quoteManualPct > 0
+        ? `<p><strong>خصم إضافي (${quoteManualPct}%):</strong> ${quoteManualAmount.toFixed(2)} ج.م</p>`
+        : `<p><strong>خصم إضافي:</strong> ${quoteManualAmount.toFixed(2)} ج.م</p>`;
+    totalExtraLines.push(manualLine);
+  }
   if (quoteVatApplied) {
     totalExtraLines.push(
       `<p><strong>ضريبة القيمة المضافة (١٤٪):</strong> ${quoteVatAmount.toFixed(2)} ج.م</p>`
