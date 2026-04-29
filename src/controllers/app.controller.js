@@ -5,11 +5,13 @@ const fs = require('fs');
 
 const InventoryItem = require('../models/InventoryItem');
 const Quote = require('../models/Quote');
+const Receipt = require('../models/Receipt');
 const Sale = require('../models/Sale');
 const StockAddition = require('../models/StockAddition');
 const { getOrCreateSettings } = require('../services/companySettings');
 const { quoteToPdfBuffer } = require('../services/quotePdf');
 const { saleToPdfBuffer } = require('../services/salePdf');
+const { receiptToPdfBuffer } = require('../services/receiptPdf');
 const { quoteToWorkbook } = require('../services/quoteExcel');
 const { SALE_PAYMENT_METHODS, salePaymentLabel } = require('../constants/salePayment');
 
@@ -78,6 +80,14 @@ function computeSubtotalAdjustments(
 
 /** Admin أو منشئ السجل فقط يمكنه التعديل/الحذف */
 function quoteAccessFilter(req) {
+  const id = req.params.id;
+  if (!mongoose.isValidObjectId(id)) return null;
+  if (req.session.role === 'admin') return { _id: id };
+  return { _id: id, createdBy: req.session.userId };
+}
+
+/** Admin أو منشئ السجل فقط يمكنه التعديل/الحذف — الإيصالات */
+function receiptAccessFilter(req) {
   const id = req.params.id;
   if (!mongoose.isValidObjectId(id)) return null;
   if (req.session.role === 'admin') return { _id: id };
@@ -589,7 +599,7 @@ async function quotesList(req, res) {
     filter.createdAt = { ...filter.createdAt, $lte: t };
   }
   const page = Math.max(1, parseInt(req.query.page, 10) || 1);
-  const [quotes, total] = await Promise.all([
+  const [quotes, total, receipts] = await Promise.all([
     Quote.find(filter)
       .sort({ createdAt: -1 })
       .skip((page - 1) * QUOTE_LIMIT)
@@ -597,6 +607,11 @@ async function quotesList(req, res) {
       .populate('createdBy', 'fullName username')
       .lean(),
     Quote.countDocuments(filter),
+    Receipt.find()
+      .sort({ createdAt: -1 })
+      .limit(200)
+      .populate('createdBy', 'fullName username')
+      .lean(),
   ]);
   res.render(
     'sections/quotes',
@@ -609,10 +624,188 @@ async function quotesList(req, res) {
       totalPages: Math.max(1, Math.ceil(total / QUOTE_LIMIT)),
       query: req.query,
       quote: null,
+      receipts,
       listUserId: req.session.userId,
       listIsAdmin: req.session.role === 'admin',
     })
   );
+}
+
+function parseReceiptMoney(raw) {
+  if (raw == null || String(raw).trim() === '') return 0;
+  const n = Number(String(raw).replace(/,/g, '.').trim());
+  if (!Number.isFinite(n) || n < 0) return 0;
+  return Math.round(n * 100) / 100;
+}
+
+async function receiptsCreate(req, res) {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    req.flash('error', errors.array().map((e) => e.msg).join(' — '));
+    return res.redirect('/quotes');
+  }
+  const issuedAt = new Date(req.body.issuedAt);
+  if (Number.isNaN(issuedAt.getTime())) {
+    req.flash('error', 'تاريخ التحرير غير صالح');
+    return res.redirect('/quotes');
+  }
+  let chequeDate = null;
+  if (req.body.chequeDate && String(req.body.chequeDate).trim()) {
+    const d = new Date(req.body.chequeDate);
+    chequeDate = Number.isNaN(d.getTime()) ? null : d;
+  }
+  const last = await Receipt.findOne().sort({ receiptNumber: -1 }).select('receiptNumber').lean();
+  const receiptNumber = last ? last.receiptNumber + 1 : 1;
+  const doc = await Receipt.create({
+    receiptNumber,
+    issuedAt,
+    receivedFrom: req.body.receivedFrom.trim(),
+    amountWords: (req.body.amountWords || '').trim(),
+    cashAmount: parseReceiptMoney(req.body.cashAmount),
+    chequeAmount: parseReceiptMoney(req.body.chequeAmount),
+    bankName: (req.body.bankName || '').trim(),
+    customerName: (req.body.customerName || '').trim(),
+    chequeNumber: (req.body.chequeNumber || '').trim(),
+    chequeDate,
+    createdBy: req.session.userId,
+  });
+  req.flash('success', `تم حفظ الإيصال رقم ${String(receiptNumber).padStart(6, '0')}`);
+  res.redirect(`/receipts/${doc._id}`);
+}
+
+async function receiptsShow(req, res) {
+  if (!mongoose.isValidObjectId(req.params.id)) {
+    req.flash('error', 'الإيصال غير موجود');
+    return res.redirect('/quotes');
+  }
+  const receipt = await Receipt.findById(req.params.id).populate('createdBy', 'fullName username').lean();
+  if (!receipt) {
+    req.flash('error', 'الإيصال غير موجود');
+    return res.redirect('/quotes');
+  }
+  const createdId = receipt.createdBy && receipt.createdBy._id ? String(receipt.createdBy._id) : '';
+  const canMutateReceipt = req.session.role === 'admin' || createdId === String(req.session.userId);
+  res.render(
+    'sections/quotes',
+    shell({
+      section: 'quotes',
+      title: `إيصال ${String(receipt.receiptNumber).padStart(6, '0')}`,
+      mode: 'receipt-show',
+      receipt,
+      quote: null,
+      quotes: [],
+      page: 1,
+      totalPages: 1,
+      query: {},
+      canMutateReceipt,
+    })
+  );
+}
+
+async function receiptsEditForm(req, res) {
+  const filter = receiptAccessFilter(req);
+  if (!filter) {
+    req.flash('error', 'الإيصال غير موجود');
+    return res.redirect('/quotes');
+  }
+  const receipt = await Receipt.findOne(filter).populate('createdBy', 'fullName username').lean();
+  if (!receipt) {
+    req.flash('error', 'الإيصال غير موجود أو ليس لديك صلاحية التعديل');
+    return res.redirect('/quotes');
+  }
+  res.render(
+    'sections/quotes',
+    shell({
+      section: 'quotes',
+      title: 'تعديل إيصال استلام',
+      mode: 'receipt-edit',
+      receipt,
+      quote: null,
+      quotes: [],
+      page: 1,
+      totalPages: 1,
+      query: {},
+    })
+  );
+}
+
+async function receiptsUpdate(req, res) {
+  const filter = receiptAccessFilter(req);
+  const id = req.params.id;
+  if (!filter) {
+    req.flash('error', 'الإيصال غير موجود');
+    return res.redirect('/quotes');
+  }
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    req.flash('error', errors.array().map((e) => e.msg).join(' — '));
+    return res.redirect(`/receipts/${id}/edit`);
+  }
+  const issuedAt = new Date(req.body.issuedAt);
+  if (Number.isNaN(issuedAt.getTime())) {
+    req.flash('error', 'تاريخ التحرير غير صالح');
+    return res.redirect(`/receipts/${id}/edit`);
+  }
+  let chequeDate = null;
+  if (req.body.chequeDate && String(req.body.chequeDate).trim()) {
+    const d = new Date(req.body.chequeDate);
+    chequeDate = Number.isNaN(d.getTime()) ? null : d;
+  }
+  const r = await Receipt.updateOne(filter, {
+    $set: {
+      issuedAt,
+      receivedFrom: req.body.receivedFrom.trim(),
+      amountWords: (req.body.amountWords || '').trim(),
+      cashAmount: parseReceiptMoney(req.body.cashAmount),
+      chequeAmount: parseReceiptMoney(req.body.chequeAmount),
+      bankName: (req.body.bankName || '').trim(),
+      customerName: (req.body.customerName || '').trim(),
+      chequeNumber: (req.body.chequeNumber || '').trim(),
+      chequeDate,
+    },
+  });
+  if (r.matchedCount === 0) {
+    req.flash('error', 'تعذر حفظ التعديلات');
+    return res.redirect('/quotes');
+  }
+  req.flash('success', 'تم حفظ تعديلات الإيصال');
+  res.redirect(`/receipts/${id}`);
+}
+
+async function receiptsDelete(req, res) {
+  const filter = receiptAccessFilter(req);
+  if (!filter) {
+    req.flash('error', 'الإيصال غير موجود');
+    return res.redirect('/quotes');
+  }
+  const result = await Receipt.deleteOne(filter);
+  if (result.deletedCount === 0) {
+    req.flash('error', 'تعذر الحذف');
+    return res.redirect('/quotes');
+  }
+  req.flash('success', 'تم حذف الإيصال');
+  res.redirect('/quotes');
+}
+
+async function receiptsPdf(req, res) {
+  if (!mongoose.isValidObjectId(req.params.id)) {
+    return res.status(404).type('text/plain; charset=utf-8').send('غير موجود');
+  }
+  const receipt = await Receipt.findById(req.params.id).lean();
+  if (!receipt) {
+    return res.status(404).type('text/plain; charset=utf-8').send('غير موجود');
+  }
+  try {
+    const buf = await receiptToPdfBuffer(receipt);
+    const num = String(receipt.receiptNumber).padStart(6, '0');
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="receipt-${num}.pdf"`);
+    res.send(Buffer.from(buf));
+  } catch (e) {
+    console.error(e);
+    req.flash('error', 'تعذر إنشاء ملف PDF');
+    res.redirect(`/receipts/${req.params.id}`);
+  }
 }
 
 async function quotesNewRequest(req, res) {
@@ -1524,6 +1717,12 @@ module.exports = {
   quotesEditForm,
   quotesUpdate,
   quotesDelete,
+  receiptsCreate,
+  receiptsShow,
+  receiptsEditForm,
+  receiptsUpdate,
+  receiptsDelete,
+  receiptsPdf,
   salesList,
   salesNewForm,
   salesCreate,

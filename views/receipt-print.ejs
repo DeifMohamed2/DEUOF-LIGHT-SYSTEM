@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html dir="rtl" lang="ar">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>إيصال استلام — <%= String(receipt.receiptNumber).padStart(6, '0') %></title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700&display=swap" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: 'Tajawal', system-ui, sans-serif;
+      margin: 0;
+      padding: 1.5rem;
+      color: #0f172a;
+      background: #f8fafc;
+      line-height: 1.5;
+    }
+    .sheet {
+      max-width: 720px;
+      margin: 0 auto;
+      background: #fff;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      padding: 1.75rem 2rem;
+      box-shadow: 0 4px 24px rgba(15, 23, 42, 0.06);
+    }
+    .brand {
+      text-align: center;
+      border-bottom: 2px solid #0d9488;
+      padding-bottom: 0.75rem;
+      margin-bottom: 1.25rem;
+    }
+    .brand h1 { margin: 0; font-size: 1.15rem; font-weight: 700; color: #0f172a; }
+    .brand .sub { margin: 0.35rem 0 0; font-size: 0.9rem; color: #64748b; }
+    .title {
+      text-align: center;
+      font-size: 1.1rem;
+      font-weight: 700;
+      margin: 0 0 1rem;
+      letter-spacing: 0.02em;
+    }
+    .meta {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      gap: 0.75rem;
+      margin-bottom: 1.25rem;
+      font-size: 0.95rem;
+    }
+    .meta span { color: #334155; }
+    .meta strong { color: #0f172a; }
+    .row {
+      display: grid;
+      grid-template-columns: 1fr 2fr;
+      gap: 0.5rem 1rem;
+      padding: 0.45rem 0;
+      border-bottom: 1px dashed #e2e8f0;
+      font-size: 0.95rem;
+    }
+    .row:last-child { border-bottom: none; }
+    .label { color: #475569; font-weight: 500; }
+    .value { color: #0f172a; }
+    .sums {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 0.75rem;
+      margin-top: 1rem;
+      padding-top: 1rem;
+      border-top: 1px solid #e2e8f0;
+    }
+    .sum-box {
+      text-align: center;
+      padding: 0.65rem;
+      background: #f1f5f9;
+      border-radius: 6px;
+      font-size: 0.88rem;
+    }
+    .sum-box strong { display: block; font-size: 1rem; margin-top: 0.25rem; color: #0f766e; }
+    .total-bar {
+      margin-top: 1.25rem;
+      padding: 0.85rem 1rem;
+      background: linear-gradient(135deg, #f0fdfa 0%, #ccfbf1 100%);
+      border-radius: 8px;
+      text-align: center;
+      font-size: 1.05rem;
+      font-weight: 700;
+      color: #134e4a;
+      border: 1px solid #99f6e4;
+    }
+    .toolbar {
+      max-width: 720px;
+      margin: 0 auto 1rem;
+      display: flex;
+      gap: 0.5rem;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+    .toolbar button {
+      font-family: inherit;
+      padding: 0.55rem 1.1rem;
+      border-radius: 6px;
+      border: 1px solid #0d9488;
+      background: #0d9488;
+      color: #fff;
+      cursor: pointer;
+      font-size: 0.95rem;
+    }
+    .toolbar button.secondary {
+      background: #fff;
+      color: #0f766e;
+    }
+    .toolbar a {
+      padding: 0.55rem 1rem;
+      color: #475569;
+      text-decoration: none;
+      font-size: 0.9rem;
+    }
+    @media print {
+      body { background: #fff; padding: 0; }
+      .toolbar { display: none !important; }
+      .sheet { border: none; box-shadow: none; border-radius: 0; max-width: none; }
+    }
+  </style>
+</head>
+<body>
+  <% var totalAmt = Number(receipt.cashAmount || 0) + Number(receipt.chequeAmount || 0); %>
+  <% var issued = new Date(receipt.issuedAt); %>
+  <div class="toolbar no-print">
+    <button type="button" onclick="window.print()">طباعة</button>
+    <button type="button" class="secondary" onclick="window.close()">إغلاق</button>
+    <a href="/receipts/<%= receipt._id %>">العودة للإيصال</a>
+  </div>
+  <article class="sheet">
+    <header class="brand">
+      <h1><%= companyLabel %></h1>
+      <p class="sub">إيصال استلام نقدية / شيكات</p>
+    </header>
+    <p class="title">فقط مبلغ وقدره — <%= receipt.amountWords && String(receipt.amountWords).trim() ? receipt.amountWords : '………………' %></p>
+    <div class="meta">
+      <span>رقم الإيصال: <strong dir="ltr"><%= String(receipt.receiptNumber).padStart(6, '0') %></strong></span>
+      <span>تحريراً في: <strong><%= issued.toLocaleDateString('ar-EG', { year: 'numeric', month: 'numeric', day: 'numeric' }) %></strong></span>
+    </div>
+    <div class="row">
+      <span class="label">استلمنا من السيد /</span>
+      <span class="value"><%= receipt.receivedFrom || '—' %></span>
+    </div>
+    <div class="sums">
+      <div class="sum-box">نقداً<br><strong dir="ltr"><%= Number(receipt.cashAmount || 0).toFixed(2) %> ج.م</strong></div>
+      <div class="sum-box">شيكات<br><strong dir="ltr"><%= Number(receipt.chequeAmount || 0).toFixed(2) %> ج.م</strong></div>
+      <div class="sum-box">البنك<br><strong style="font-size:0.85rem;"><%= receipt.bankName && String(receipt.bankName).trim() ? receipt.bankName : '—' %></strong></div>
+    </div>
+    <div class="row" style="margin-top:0.75rem">
+      <span class="label">اسم العميل</span>
+      <span class="value"><%= receipt.customerName && String(receipt.customerName).trim() ? receipt.customerName : '—' %></span>
+    </div>
+    <div class="row">
+      <span class="label">رقم الشيك</span>
+      <span class="value" dir="ltr"><%= receipt.chequeNumber && String(receipt.chequeNumber).trim() ? receipt.chequeNumber : '—' %></span>
+    </div>
+    <div class="row">
+      <span class="label">تاريخ الشيك</span>
+      <span class="value"><%= receipt.chequeDate ? new Date(receipt.chequeDate).toLocaleDateString('ar-EG') : '—' %></span>
+    </div>
+    <div class="total-bar">
+      إجمالي محصل: <%= totalAmt.toFixed(2) %> ج.م
+    </div>
+  </article>
+</body>
+</html>

@@ -485,4 +485,4 @@ async function quoteToPdfBuffer(quote) {
   }
 }
 
-module.exports = { quoteToPdfBuffer, renderQuotePdfHtml, puppeteerLaunchOptions };
+module.exports = { quoteToPdfBuffer, renderQuotePdfHtml, puppeteerLaunchOptions, underLogoLinesHtml };

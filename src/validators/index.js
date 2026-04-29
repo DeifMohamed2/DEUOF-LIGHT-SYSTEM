@@ -94,6 +94,18 @@ const userUpdateRules = [
     .withMessage('كلمة المرور الجديدة من ٦ إلى ١٢٨ حرفاً'),
 ];
 
+const receiptRules = [
+  body('issuedAt').trim().notEmpty().withMessage('تاريخ التحرير مطلوب'),
+  body('receivedFrom').trim().notEmpty().withMessage('حقل «استلمنا من السيد» مطلوب'),
+  body('amountWords').optional().trim().isLength({ max: 2000 }),
+  body('cashAmount').optional().trim(),
+  body('chequeAmount').optional().trim(),
+  body('bankName').optional().trim().isLength({ max: 500 }),
+  body('customerName').optional().trim().isLength({ max: 500 }),
+  body('chequeNumber').optional().trim().isLength({ max: 200 }),
+  body('chequeDate').optional({ values: 'falsy' }).trim(),
+];
+
 module.exports = {
   loginRules,
   itemRules,
@@ -104,4 +116,5 @@ module.exports = {
   stockAdditionRules,
   userCreateRules,
   userUpdateRules,
+  receiptRules,
 };

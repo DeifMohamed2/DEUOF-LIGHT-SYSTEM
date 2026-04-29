@@ -6,6 +6,7 @@
     <p class="muted priced-quote-hint priced-quote-hint--small"><span class="priced-quote-hint__star" dir="ltr"><%= pricedQuoteVatNotePrefix %></span><span dir="rtl">لعروض المخزون: <%= pricedQuoteVatNote %></span></p>
   </div>
   <div class="btn-row">
+    <button type="button" class="btn btn--ghost js-open-receipt-modal">ايصال استلام نقدية/شيكات</button>
     <a href="/quotes/new/request" class="btn">طلب تسليم بضاعه</a>
     <a href="/quotes/new/from-stock" class="btn btn--primary">عرض سعر من المخزون</a>
   </div>
@@ -23,6 +24,7 @@
   <button type="submit" class="btn btn--sm">تصفية</button>
 </form>
 
+<h2 class="page-subtitle">عروض الأسعار وطلبات التسليم</h2>
 <% if (!quotes.length) { %>
   <div class="panel empty">لا توجد سجلات.</div>
 <% } else { %>
@@ -69,6 +71,176 @@
   <% } %>
 </div>
 <% } %>
+
+<h2 class="page-subtitle" style="margin-top:1.75rem">إيصالات استلام نقدية / شيكات</h2>
+<% if (!receipts || !receipts.length) { %>
+  <div class="panel empty">لا توجد إيصالات بعد. استخدم الزر «ايصال استلام نقدية/شيكات» لإضافة إيصال.</div>
+<% } else { %>
+<div class="table-wrap">
+<table class="table">
+  <thead>
+    <tr>
+      <th>النوع</th>
+      <th>رقم الإيصال</th>
+      <th>العميل / المستلم</th>
+      <th>التاريخ</th>
+      <th>الإجمالي (ج.م)</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    <% receipts.forEach(function (r) { %>
+    <% var rTotal = (Number(r.cashAmount || 0) + Number(r.chequeAmount || 0)); %>
+    <% var rLabel = (r.receivedFrom && String(r.receivedFrom).trim()) ? r.receivedFrom : (r.customerName || '—'); %>
+    <% var rCreator = r.createdBy && r.createdBy._id ? String(r.createdBy._id) : ''; %>
+    <tr>
+      <td>ايصال استلام نقدية/شيكات</td>
+      <td dir="ltr"><code><%= String(r.receiptNumber).padStart(6, '0') %></code></td>
+      <td><%= rLabel %></td>
+      <td><%= new Date(r.issuedAt || r.createdAt).toLocaleString('ar-EG') %></td>
+      <td><%= rTotal.toFixed(2) %> ج.م</td>
+      <td class="nowrap">
+        <a class="link" href="/receipts/<%= r._id %>">عرض</a>
+        <% if ((typeof listIsAdmin !== 'undefined' && listIsAdmin) || (typeof listUserId !== 'undefined' && rCreator === String(listUserId))) { %>
+        · <a class="link" href="/receipts/<%= r._id %>/edit">تعديل</a>
+        · <form class="form--inline-delete" method="post" action="/receipts/<%= r._id %>/delete" onsubmit="return confirm('حذف هذا الإيصال نهائياً؟');">
+          <button type="submit" class="link link--danger btn-as-text">حذف</button>
+        </form>
+        <% } %>
+      </td>
+    </tr>
+    <% }) %>
+  </tbody>
+</table>
+</div>
+<% } %>
+
+<div id="receipt-modal" class="modal" hidden aria-hidden="true">
+  <div class="modal__backdrop js-receipt-modal-close" tabindex="-1"></div>
+  <div class="modal__dialog modal__dialog--wide" role="dialog" aria-modal="true" aria-labelledby="receipt-modal-title">
+    <h2 id="receipt-modal-title" class="modal__title">ايصال استلام نقدية / شيكات</h2>
+    <form method="post" action="/receipts" id="receipt-modal-form" class="form">
+      <label class="form__label" for="receipt-issued-at">تحريراً في</label>
+      <input type="date" name="issuedAt" id="receipt-issued-at" class="form__input" required>
+
+      <label class="form__label" for="receipt-received-from">استلمنا من السيد /</label>
+      <input type="text" name="receivedFrom" id="receipt-received-from" class="form__input" required maxlength="500" autocomplete="off">
+
+      <label class="form__label" for="receipt-amount-words">فقط مبلغ وقدره</label>
+      <p class="form__hint" style="margin:-0.2rem 0 0.45rem">يتم تعبئتها تلقائياً من النظام عند طباعة PDF إذا تُرك الحقل فارغاً.</p>
+      <textarea name="amountWords" id="receipt-amount-words" class="form__input" rows="2" maxlength="2000" placeholder="اختياري — أو اكتب النص يدوياً"></textarea>
+
+      <div class="form__grid--3" style="margin-top:0.5rem">
+        <div class="form__field-stack">
+          <label class="form__label" for="receipt-cash">نقداً</label>
+          <input type="number" name="cashAmount" id="receipt-cash" class="form__input" min="0" step="0.01" placeholder="0">
+        </div>
+        <div class="form__field-stack">
+          <label class="form__label" for="receipt-cheque-amt">شيكات</label>
+          <input type="number" name="chequeAmount" id="receipt-cheque-amt" class="form__input" min="0" step="0.01" placeholder="0">
+        </div>
+        <div class="form__field-stack">
+          <label class="form__label" for="receipt-bank">بنك</label>
+          <input type="text" name="bankName" id="receipt-bank" class="form__input" maxlength="500" placeholder="اسم البنك">
+        </div>
+      </div>
+
+      <div class="form__grid--3" style="margin-top:0.5rem">
+        <div class="form__field-stack">
+          <label class="form__label" for="receipt-customer">اسم العميل</label>
+          <input type="text" name="customerName" id="receipt-customer" class="form__input" maxlength="500">
+        </div>
+        <div class="form__field-stack">
+          <label class="form__label" for="receipt-cheque-num">رقم الشيك</label>
+          <input type="text" name="chequeNumber" id="receipt-cheque-num" class="form__input" maxlength="200">
+        </div>
+        <div class="form__field-stack">
+          <label class="form__label" for="receipt-cheque-date">تاريخ الشيك</label>
+          <input type="date" name="chequeDate" id="receipt-cheque-date" class="form__input">
+        </div>
+      </div>
+
+      <div class="form__actions">
+        <button type="submit" class="btn btn--primary">حفظ الإيصال</button>
+        <button type="button" class="btn btn--ghost js-receipt-modal-close">إلغاء</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+(function () {
+  var modal = document.getElementById('receipt-modal');
+  var openBtn = document.querySelector('.js-open-receipt-modal');
+  var dateIn = document.getElementById('receipt-issued-at');
+  var form = document.getElementById('receipt-modal-form');
+  var cashIn = document.getElementById('receipt-cash');
+  var chequeEls = [
+    document.getElementById('receipt-cheque-amt'),
+    document.getElementById('receipt-bank'),
+    document.getElementById('receipt-customer'),
+    document.getElementById('receipt-cheque-num'),
+    document.getElementById('receipt-cheque-date')
+  ];
+  function parseCash() {
+    var t = String(cashIn && cashIn.value != null ? cashIn.value : '').replace(/,/g, '.').trim();
+    var n = parseFloat(t);
+    return Number.isFinite(n) ? n : 0;
+  }
+  function applyCashLock() {
+    var lock = parseCash() > 0;
+    chequeEls.forEach(function (el) {
+      if (!el) return;
+      el.disabled = lock;
+      if (lock) {
+        if (el.type === 'number') el.value = '0';
+        else if (el.type === 'date') el.value = '';
+        else el.value = '';
+      }
+    });
+  }
+  if (form && cashIn) {
+    cashIn.addEventListener('input', applyCashLock);
+    cashIn.addEventListener('change', applyCashLock);
+    form.addEventListener('submit', function () {
+      if (parseCash() > 0) {
+        chequeEls.forEach(function (el) {
+          if (!el) return;
+          el.disabled = false;
+          if (el.type === 'number') el.value = '0';
+          else if (el.type === 'date') el.value = '';
+          else el.value = '';
+        });
+      }
+    });
+  }
+  if (!modal || !openBtn) return;
+  function pad2(n) { return (n < 10 ? '0' : '') + n; }
+  function todayISO() {
+    var d = new Date();
+    return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
+  }
+  function openModal() {
+    if (dateIn && !dateIn.value) dateIn.value = todayISO();
+    applyCashLock();
+    modal.hidden = false;
+    modal.setAttribute('aria-hidden', 'false');
+    var first = document.getElementById('receipt-received-from');
+    if (first) setTimeout(function () { first.focus(); }, 50);
+  }
+  function closeModal() {
+    modal.hidden = true;
+    modal.setAttribute('aria-hidden', 'true');
+  }
+  openBtn.addEventListener('click', openModal);
+  document.querySelectorAll('.js-receipt-modal-close').forEach(function (el) {
+    el.addEventListener('click', function () { closeModal(); });
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && !modal.hidden) closeModal();
+  });
+})();
+</script>
 
 <% } else if (mode === 'request') { %>
 <div class="page-head">
@@ -578,4 +750,135 @@
     <% } %>
   <% } %>
 </div>
+<% } else if (mode === 'receipt-show' && receipt) { %>
+<div class="page-head page-head--split">
+  <div>
+    <h1 class="page-title">إيصال استلام نقدية / شيكات</h1>
+    <p class="muted">رقم <strong dir="ltr"><%= String(receipt.receiptNumber).padStart(6, '0') %></strong><% if (receipt.receivedFrom) { %> — <%= receipt.receivedFrom %><% } %></p>
+  </div>
+  <div class="btn-row btn-row--wrap">
+    <a class="btn btn--primary" href="/receipts/<%= receipt._id %>/pdf">تحميل PDF</a>
+    <% if (typeof canMutateReceipt !== 'undefined' && canMutateReceipt) { %>
+    <a class="btn btn--secondary" href="/receipts/<%= receipt._id %>/edit">تعديل</a>
+    <form method="post" action="/receipts/<%= receipt._id %>/delete" class="form--inline-delete" onsubmit="return confirm('حذف هذا الإيصال نهائياً؟');">
+      <button type="submit" class="btn btn--danger btn--sm">حذف</button>
+    </form>
+    <% } %>
+    <a class="link" href="/quotes">رجوع لبيانات الأسعار</a>
+  </div>
+</div>
+<div class="panel receipt-detail">
+  <dl class="meta-list">
+    <dt>رقم الإيصال</dt><dd dir="ltr"><strong><%= String(receipt.receiptNumber).padStart(6, '0') %></strong></dd>
+    <dt>تحريراً في</dt><dd><%= new Date(receipt.issuedAt).toLocaleDateString('ar-EG', { year: 'numeric', month: 'long', day: 'numeric' }) %></dd>
+    <dt>استلمنا من السيد</dt><dd><%= receipt.receivedFrom || '—' %></dd>
+    <dt>فقط مبلغ وقدره</dt><dd><%= receipt.amountWords && String(receipt.amountWords).trim() ? receipt.amountWords : '—' %></dd>
+    <dt>نقداً</dt><dd><%= Number(receipt.cashAmount || 0).toFixed(2) %> ج.م</dd>
+    <dt>شيكات</dt><dd><%= Number(receipt.chequeAmount || 0).toFixed(2) %> ج.م</dd>
+    <dt>بنك</dt><dd><%= receipt.bankName && String(receipt.bankName).trim() ? receipt.bankName : '—' %></dd>
+    <dt>اسم العميل</dt><dd><%= receipt.customerName && String(receipt.customerName).trim() ? receipt.customerName : '—' %></dd>
+    <dt>رقم الشيك</dt><dd><%= receipt.chequeNumber && String(receipt.chequeNumber).trim() ? receipt.chequeNumber : '—' %></dd>
+    <dt>تاريخ الشيك</dt><dd><%= receipt.chequeDate ? new Date(receipt.chequeDate).toLocaleDateString('ar-EG') : '—' %></dd>
+    <dt>أنشأه</dt><dd><%= receipt.createdBy && receipt.createdBy.fullName ? receipt.createdBy.fullName : (receipt.createdBy && receipt.createdBy.username) || '—' %></dd>
+    <dt>تاريخ التسجيل</dt><dd><%= new Date(receipt.createdAt).toLocaleString('ar-EG') %></dd>
+  </dl>
+  <p class="total-line receipt-detail__total"><strong>إجمالي محصل:</strong> <%= (Number(receipt.cashAmount || 0) + Number(receipt.chequeAmount || 0)).toFixed(2) %> ج.م</p>
+</div>
+<% } else if (mode === 'receipt-edit' && receipt) { %>
+<div class="page-head">
+  <h1 class="page-title">تعديل إيصال استلام</h1>
+  <a href="/receipts/<%= receipt._id %>" class="link">رجوع للإيصال</a>
+</div>
+<div class="panel">
+  <form class="form" method="post" action="/receipts/<%= receipt._id %>" id="receipt-edit-form">
+    <label class="form__label" for="receipt-edit-issued">تحريراً في</label>
+    <input type="date" name="issuedAt" id="receipt-edit-issued" class="form__input" required value="<%= receipt.issuedAt ? new Date(receipt.issuedAt).toISOString().slice(0, 10) : '' %>">
+
+    <label class="form__label" for="receipt-edit-from">استلمنا من السيد /</label>
+    <input type="text" name="receivedFrom" id="receipt-edit-from" class="form__input" required maxlength="500" value="<%= receipt.receivedFrom || '' %>">
+
+    <label class="form__label" for="receipt-edit-words">فقط مبلغ وقدره</label>
+    <p class="form__hint" style="margin:-0.2rem 0 0.45rem">يتم تعبئتها تلقائياً من النظام عند طباعة PDF إذا تُرك الحقل فارغاً.</p>
+    <textarea name="amountWords" id="receipt-edit-words" class="form__input" rows="2" maxlength="2000"><%= receipt.amountWords || '' %></textarea>
+
+    <div class="form__grid--3" style="margin-top:0.5rem">
+      <div class="form__field-stack">
+        <label class="form__label" for="receipt-edit-cash">نقداً</label>
+        <input type="number" name="cashAmount" id="receipt-edit-cash" class="form__input" min="0" step="0.01" value="<%= receipt.cashAmount != null ? receipt.cashAmount : '' %>">
+      </div>
+      <div class="form__field-stack">
+        <label class="form__label" for="receipt-edit-chq-amt">شيكات</label>
+        <input type="number" name="chequeAmount" id="receipt-edit-chq-amt" class="form__input" min="0" step="0.01" value="<%= receipt.chequeAmount != null ? receipt.chequeAmount : '' %>">
+      </div>
+      <div class="form__field-stack">
+        <label class="form__label" for="receipt-edit-bank">بنك</label>
+        <input type="text" name="bankName" id="receipt-edit-bank" class="form__input" maxlength="500" value="<%= receipt.bankName || '' %>">
+      </div>
+    </div>
+
+    <div class="form__grid--3" style="margin-top:0.5rem">
+      <div class="form__field-stack">
+        <label class="form__label" for="receipt-edit-cust">اسم العميل</label>
+        <input type="text" name="customerName" id="receipt-edit-cust" class="form__input" maxlength="500" value="<%= receipt.customerName || '' %>">
+      </div>
+      <div class="form__field-stack">
+        <label class="form__label" for="receipt-edit-chq-num">رقم الشيك</label>
+        <input type="text" name="chequeNumber" id="receipt-edit-chq-num" class="form__input" maxlength="200" value="<%= receipt.chequeNumber || '' %>">
+      </div>
+      <div class="form__field-stack">
+        <label class="form__label" for="receipt-edit-chq-date">تاريخ الشيك</label>
+        <input type="date" name="chequeDate" id="receipt-edit-chq-date" class="form__input" value="<%= receipt.chequeDate ? new Date(receipt.chequeDate).toISOString().slice(0, 10) : '' %>">
+      </div>
+    </div>
+
+    <div class="form__actions">
+      <button type="submit" class="btn btn--primary">حفظ التعديلات</button>
+    </div>
+  </form>
+</div>
+<script>
+(function () {
+  var form = document.getElementById('receipt-edit-form');
+  var cashIn = document.getElementById('receipt-edit-cash');
+  var chequeEls = [
+    document.getElementById('receipt-edit-chq-amt'),
+    document.getElementById('receipt-edit-bank'),
+    document.getElementById('receipt-edit-cust'),
+    document.getElementById('receipt-edit-chq-num'),
+    document.getElementById('receipt-edit-chq-date')
+  ];
+  function parseCash() {
+    var t = String(cashIn && cashIn.value != null ? cashIn.value : '').replace(/,/g, '.').trim();
+    var n = parseFloat(t);
+    return Number.isFinite(n) ? n : 0;
+  }
+  function applyCashLock() {
+    var lock = parseCash() > 0;
+    chequeEls.forEach(function (el) {
+      if (!el) return;
+      el.disabled = lock;
+      if (lock) {
+        if (el.type === 'number') el.value = '0';
+        else if (el.type === 'date') el.value = '';
+        else el.value = '';
+      }
+    });
+  }
+  if (!form || !cashIn) return;
+  cashIn.addEventListener('input', applyCashLock);
+  cashIn.addEventListener('change', applyCashLock);
+  form.addEventListener('submit', function () {
+    if (parseCash() > 0) {
+      chequeEls.forEach(function (el) {
+        if (!el) return;
+        el.disabled = false;
+        if (el.type === 'number') el.value = '0';
+        else if (el.type === 'date') el.value = '';
+        else el.value = '';
+      });
+    }
+  });
+  applyCashLock();
+})();
+</script>
 <% } %>

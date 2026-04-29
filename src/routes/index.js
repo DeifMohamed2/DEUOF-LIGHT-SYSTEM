@@ -16,6 +16,7 @@ const {
   stockAdditionRules,
   userCreateRules,
   userUpdateRules,
+  receiptRules,
 } = require('../validators');
 
 const loginLimiter = rateLimit({
@@ -52,6 +53,12 @@ main.post('/inventory/:id/delete', requireAdmin, appCtrl.inventoryRemove);
 main.post('/inventory/:id', itemRules, appCtrl.inventoryUpdate);
 
 main.get('/quotes', appCtrl.quotesList);
+main.post('/receipts', receiptRules, appCtrl.receiptsCreate);
+main.get('/receipts/:id/pdf', appCtrl.receiptsPdf);
+main.get('/receipts/:id/edit', appCtrl.receiptsEditForm);
+main.post('/receipts/:id/delete', appCtrl.receiptsDelete);
+main.post('/receipts/:id', receiptRules, appCtrl.receiptsUpdate);
+main.get('/receipts/:id', appCtrl.receiptsShow);
 main.get('/quotes/new/request', appCtrl.quotesNewRequest);
 main.post('/quotes/new/request', quoteCustomerValidators, appCtrl.quotesCreateRequest);
 main.get('/quotes/new/from-stock', appCtrl.quotesNewFromStock);

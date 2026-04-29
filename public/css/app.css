@@ -413,6 +413,12 @@ button.btn-as-text {
   box-shadow: 0 0 0 3px var(--accent-ring);
 }
 
+.form__input:disabled {
+  opacity: 0.68;
+  cursor: not-allowed;
+  background: rgba(0, 0, 0, 0.03);
+}
+
 select.form__input {
   cursor: pointer;
   appearance: auto;
@@ -825,6 +831,10 @@ code {
   border: 1px solid rgba(0, 0, 0, 0.06);
 }
 
+.modal__dialog--wide {
+  max-width: min(720px, 100%);
+}
+
 .modal__title {
   margin: 0 0 0.35rem;
   font-size: 1.15rem;
@@ -1076,6 +1086,12 @@ code {
   white-space: pre-wrap;
 }
 
+.receipt-detail__total {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid rgba(0, 0, 0, 0.08);
+}
+
 .total-line {
   margin-top: 1rem;
   font-size: 1.05rem;
@@ -1115,6 +1131,17 @@ code {
   min-width: 0;
 }
 
+.form__grid--3 {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.85rem 1rem;
+  align-items: start;
+}
+
+.form__grid--3 > * {
+  min-width: 0;
+}
+
 .form__field-stack {
   display: flex;
   flex-direction: column;
@@ -1129,6 +1156,10 @@ code {
 
 @media (max-width: 640px) {
   .form__grid--2 {
+    grid-template-columns: 1fr;
+  }
+
+  .form__grid--3 {
     grid-template-columns: 1fr;
   }
 }
