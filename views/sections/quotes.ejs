@@ -6,7 +6,7 @@
     <p class="muted priced-quote-hint priced-quote-hint--small"><span class="priced-quote-hint__star" dir="ltr"><%= pricedQuoteVatNotePrefix %></span><span dir="rtl">لعروض المخزون: <%= pricedQuoteVatNote %></span></p>
   </div>
   <div class="btn-row">
-    <a href="/quotes/new/request" class="btn">طلب تسعير</a>
+    <a href="/quotes/new/request" class="btn">طلب تسليم بضاعه</a>
     <a href="/quotes/new/from-stock" class="btn btn--primary">عرض سعر من المخزون</a>
   </div>
 </div>
@@ -14,7 +14,7 @@
 <form class="filters" method="get" action="/quotes">
   <select name="type" class="form__input form__input--inline">
     <option value="">كل الأنواع</option>
-    <option value="request" <%= query.type === 'request' ? 'selected' : '' %>>طلب تسعير</option>
+    <option value="request" <%= query.type === 'request' ? 'selected' : '' %>>طلب تسليم بضاعه</option>
     <option value="from_stock" <%= query.type === 'from_stock' ? 'selected' : '' %>>من المخزون</option>
   </select>
   <input class="form__input form__input--inline" name="customer" placeholder="اسم العميل" value="<%= query.customer || '' %>">
@@ -40,7 +40,7 @@
   <tbody>
     <% quotes.forEach(function (q) { %>
     <tr>
-      <td><%= q.type === 'request' ? 'طلب تسعير' : 'من المخزون' %></td>
+      <td><%= q.type === 'request' ? 'طلب تسليم بضاعه' : 'من المخزون' %></td>
       <td><%= q.customerName %></td>
       <td><%= new Date(q.createdAt).toLocaleString('ar-EG') %></td>
       <td><%= q.type === 'from_stock' ? Number(q.total).toFixed(2) + ' ج.م' : '—' %></td>
@@ -72,18 +72,31 @@
 
 <% } else if (mode === 'request') { %>
 <div class="page-head">
-  <h1 class="page-title">طلب تسعير جديد</h1>
+  <div>
+    <h1 class="page-title">طلب تسليم بضاعه جديد</h1>
+    <p class="muted" dir="ltr" style="margin:0.35rem 0 0;font-size:0.95rem;">Goods delivery request</p>
+  </div>
   <a href="/quotes" class="link">رجوع</a>
 </div>
 <div class="panel">
   <form class="form" method="post" action="/quotes/new/request" id="quote-form">
     <input type="hidden" name="linesJson" id="linesJson">
+    <h3 class="form__section-title" style="margin-bottom:0.25rem">طلب تسليم بضاعه</h3>
+    <p class="muted" dir="ltr" style="margin:0 0 0.75rem;font-size:0.9rem;">Goods delivery request</p>
     <label class="form__label">اسم العميل / الجهة</label>
     <input class="form__input" name="customerName" required>
     <label class="form__label">الهاتف (اختياري)</label>
     <input class="form__input" name="customerPhone">
     <label class="form__label">ملاحظات / شروط الدفع — تظهر في PDF</label>
     <textarea class="form__input" name="notes" rows="4"><%= typeof defaultQuoteNotes !== 'undefined' ? defaultQuoteNotes : '' %></textarea>
+    <label class="form__check-row">
+      <input type="checkbox" name="includeStamp" id="quote-req-include-tax-stamp" value="1">
+      <span>ختم ضريبي</span>
+    </label>
+    <label class="form__check-row">
+      <input type="checkbox" name="includeShopStamp" id="quote-req-include-shop-stamp" value="1">
+      <span>ختم محل</span>
+    </label>
     <h3 class="form__section-title">الأسطر</h3>
     <div class="table-wrap">
     <table class="table table--compact" id="lines-table">
@@ -100,7 +113,7 @@
     </div>
     <button type="button" class="btn btn--sm" id="add-line">+ سطر</button>
     <div class="form__actions">
-      <button type="submit" class="btn btn--primary">حفظ طلب التسعير</button>
+      <button type="submit" class="btn btn--primary">حفظ طلب تسليم البضاعة</button>
     </div>
   </form>
 </div>
@@ -140,7 +153,7 @@
   <a href="/quotes" class="link">رجوع</a>
 </div>
 <div class="panel">
-  <p class="muted">أضف أصنافاً من المخزن بالبحث أدناه، أو سطوراً يدوية (أصناف غير مسجلة في المخزن) كما في طلب التسعير — مع إدخال السعر لكل سطر.</p>
+  <p class="muted">أضف أصنافاً من المخزن بالبحث أدناه، أو سطوراً يدوية (أصناف غير مسجلة في المخزن) كما في طلب تسليم البضاعة — مع إدخال السعر لكل سطر.</p>
   <div class="search-hint priced-quote-hint priced-quote-hint--small" id="stock-quote-vat-inclusive-hint" dir="ltr"><span class="priced-quote-hint__star"><%= pricedQuoteVatNotePrefix %></span><span dir="rtl"><strong>تنبيه:</strong> <%= pricedQuoteVatNote %></span></div>
   <div class="inventory-picker">
     <div class="inventory-picker__row">
@@ -383,7 +396,8 @@
 <% } else if (mode === 'edit-request' && quote) { %>
 <div class="page-head page-head--split">
   <div>
-    <h1 class="page-title">تعديل طلب تسعير</h1>
+    <h1 class="page-title">تعديل طلب تسليم بضاعه</h1>
+    <p class="muted" dir="ltr" style="margin:0.35rem 0 0;font-size:0.95rem;">Goods delivery request</p>
     <p class="muted"><%= quote.customerName %></p>
   </div>
   <div class="btn-row">
@@ -394,12 +408,22 @@
 <div class="panel">
   <form class="form" method="post" action="/quotes/<%= quote._id %>" id="quote-form-edit-req">
     <input type="hidden" name="linesJson" id="linesJsonEditReq">
+    <h3 class="form__section-title" style="margin-bottom:0.25rem">طلب تسليم بضاعه</h3>
+    <p class="muted" dir="ltr" style="margin:0 0 0.75rem;font-size:0.9rem;">Goods delivery request</p>
     <label class="form__label">اسم العميل / الجهة</label>
     <input class="form__input" name="customerName" required value="<%= quote.customerName %>">
     <label class="form__label">الهاتف (اختياري)</label>
     <input class="form__input" name="customerPhone" value="<%= quote.customerPhone || '' %>">
     <label class="form__label">ملاحظات / شروط الدفع — تظهر في PDF</label>
     <textarea class="form__input" name="notes" rows="4"><%= quote.notes || '' %></textarea>
+    <label class="form__check-row">
+      <input type="checkbox" name="includeStamp" id="quote-edit-req-include-tax-stamp" value="1" <%= quote.includeStamp ? 'checked' : '' %>>
+      <span>ختم ضريبي</span>
+    </label>
+    <label class="form__check-row">
+      <input type="checkbox" name="includeShopStamp" id="quote-edit-req-include-shop-stamp" value="1" <%= quote.includeShopStamp ? 'checked' : '' %>>
+      <span>ختم محل</span>
+    </label>
     <h3 class="form__section-title">الأسطر</h3>
     <div class="table-wrap">
     <table class="table table--compact">
@@ -470,7 +494,7 @@
 <div class="page-head page-head--split">
   <div>
     <h1 class="page-title">بيان أسعار</h1>
-    <p class="muted"><%= quote.type === 'request' ? 'طلب تسعير' : 'عرض سعر من المخزون' %> — <%= quote.customerName %></p>
+    <p class="muted"><%= quote.type === 'request' ? 'طلب تسليم بضاعه' : 'عرض سعر من المخزون' %> — <%= quote.customerName %></p>
   </div>
   <div class="btn-row btn-row--wrap">
     <a class="btn" href="/quotes/<%= quote._id %>/pdf" target="_blank">تحميل PDF</a>
@@ -489,6 +513,10 @@
     <dt>الهاتف</dt><dd><%= quote.customerPhone || '—' %></dd>
     <dt>التاريخ</dt><dd><%= new Date(quote.createdAt).toLocaleString('ar-EG') %></dd>
     <dt>أنشأه</dt><dd><%= quote.createdBy && quote.createdBy.fullName ? quote.createdBy.fullName : (quote.createdBy && quote.createdBy.username) || '—' %></dd>
+    <% if (quote.type === 'request') { %>
+    <dt>ختم ضريبي في PDF</dt><dd><%= quote.includeStamp ? 'نعم' : 'لا' %></dd>
+    <dt>ختم محل في PDF</dt><dd><%= quote.includeShopStamp ? 'نعم' : 'لا' %></dd>
+    <% } %>
     <% if (quote.notes && String(quote.notes).trim()) { %>
     <dt>ملاحظات</dt><dd class="quote-notes"><%= quote.notes %></dd>
     <% } %>

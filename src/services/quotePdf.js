@@ -8,6 +8,12 @@ const { PRICED_QUOTE_VAT_NOTE, PRICED_QUOTE_VAT_NOTE_PREFIX } = require('../cons
 /** Main title on PDF for priced quotes (`from_stock`). */
 const PRICED_QUOTE_DOCUMENT_TITLE = 'عرض سعر';
 
+const REQUEST_QUOTE_TITLE_AR = 'طلب تسليم بضاعه';
+const REQUEST_QUOTE_TITLE_EN = 'Goods delivery request';
+
+const TAX_STAMP_IMAGE_REL = 'images/khetm.png';
+const SHOP_STAMP_IMAGE_REL = 'images/khetm2.png';
+
 const FALLBACK_LOGO_REL = 'images/PHOTO-2025-10-14-05-49-43.png';
 
 function escapeHtml(s) {
@@ -69,7 +75,17 @@ async function renderQuotePdfHtml(quote) {
 
   const isRequest = quote.type === 'request';
   const showPrice = quote.type === 'from_stock';
-  const docTitle = isRequest ? 'فاتورة طلب' : PRICED_QUOTE_DOCUMENT_TITLE;
+  const docTitle = isRequest ? REQUEST_QUOTE_TITLE_AR : PRICED_QUOTE_DOCUMENT_TITLE;
+  const taxStampUri =
+    isRequest && quote.includeStamp ? imagePathToDataUri(path.join(absRoot, TAX_STAMP_IMAGE_REL)) : '';
+  const shopStampUri =
+    isRequest && quote.includeShopStamp
+      ? imagePathToDataUri(path.join(absRoot, SHOP_STAMP_IMAGE_REL))
+      : '';
+  const stampRowHtml =
+    taxStampUri || shopStampUri
+      ? `<div class="stamp-wrap">${taxStampUri ? `<span class="stamp-item"><img src="${taxStampUri}" alt="" /></span>` : ''}${shopStampUri ? `<span class="stamp-item"><img src="${shopStampUri}" alt="" /></span>` : ''}</div>`
+      : '';
   const introLine = isRequest
     ? 'برجاء التكرم بتوريد امر الشغل التالي :'
     : 'برجاء الاطلاع على التسعيرة التالية :';
@@ -256,6 +272,39 @@ async function renderQuotePdfHtml(quote) {
       color: #000;
       text-align: center;
     }
+    .header-title-en {
+      margin: 5px 0 0;
+      padding: 0;
+      font-size: 12.5px;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+      color: #222;
+      text-align: center;
+      font-family: 'IBM Plex Sans Arabic', 'Segoe UI', Tahoma, sans-serif;
+    }
+    .stamp-wrap {
+      margin: 20px auto 0;
+      display: flex;
+      flex-direction: row;
+      flex-wrap: wrap;
+      justify-content: center;
+      align-items: flex-end;
+      gap: 16px 28px;
+      direction: ltr;
+    }
+    .stamp-item {
+      flex: 0 1 auto;
+      text-align: center;
+    }
+    .stamp-item img {
+      max-width: 240px;
+      max-height: 130px;
+      width: auto;
+      height: auto;
+      object-fit: contain;
+      display: block;
+      margin: 0 auto;
+    }
     .header-right {
       position: relative;
       z-index: 1;
@@ -381,6 +430,11 @@ async function renderQuotePdfHtml(quote) {
       </div>
       <div class="header-center">
         <h1>${escapeHtml(docTitle)}</h1>
+        ${
+          isRequest
+            ? `<p class="header-title-en" dir="ltr">${escapeHtml(REQUEST_QUOTE_TITLE_EN)}</p>`
+            : ''
+        }
       </div>
       <div class="header-right">
         <div><strong>التاريخ:</strong> ${escapeHtml(dateStr)}</div>
@@ -407,6 +461,7 @@ async function renderQuotePdfHtml(quote) {
       <p>وتفضلوا بقبول فائق الاحترام</p>
       <p>نشكركم لحسن تعاونكم</p>
     </div>
+    ${stampRowHtml}
   </div>
 </body>
 </html>`;

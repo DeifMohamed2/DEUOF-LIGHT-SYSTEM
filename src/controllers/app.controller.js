@@ -621,7 +621,7 @@ async function quotesNewRequest(req, res) {
     'sections/quotes',
     shell({
       section: 'quotes',
-      title: 'طلب تسعير جديد',
+      title: 'طلب تسليم بضاعه جديد',
       mode: 'request',
       quotes: [],
       page: 1,
@@ -670,9 +670,11 @@ async function quotesCreateRequest(req, res) {
     subtotal: 0,
     total: 0,
     notes: (req.body.notes || '').trim(),
+    includeStamp: req.body.includeStamp === '1' || req.body.includeStamp === 'on',
+    includeShopStamp: req.body.includeShopStamp === '1' || req.body.includeShopStamp === 'on',
     createdBy: req.session.userId,
   });
-  req.flash('success', 'تم حفظ طلب التسعير');
+  req.flash('success', 'تم حفظ طلب تسليم البضاعة');
   res.redirect('/quotes');
 }
 
@@ -827,7 +829,7 @@ async function quotesEditForm(req, res) {
     'sections/quotes',
     shell({
       section: 'quotes',
-      title: quote.type === 'request' ? 'تعديل طلب تسعير' : 'تعديل عرض السعر',
+      title: quote.type === 'request' ? 'تعديل طلب تسليم بضاعه' : 'تعديل عرض السعر',
       mode,
       quote,
       quotes: [],
@@ -872,6 +874,8 @@ async function quotesUpdate(req, res) {
           subtotal: 0,
           total: 0,
           notes: (req.body.notes || '').trim(),
+          includeStamp: req.body.includeStamp === '1' || req.body.includeStamp === 'on',
+          includeShopStamp: req.body.includeShopStamp === '1' || req.body.includeShopStamp === 'on',
           vat14Applied: false,
           vat14Amount: 0,
           noticeDiscountApplied: false,

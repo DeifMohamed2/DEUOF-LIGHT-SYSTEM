@@ -26,6 +26,10 @@ const quoteSchema = new mongoose.Schema(
     manualDiscountAmount: { type: Number, min: 0, default: 0 },
     total: { type: Number, default: 0 },
     notes: { type: String, trim: true, default: '' },
+    /** Request PDF: tax stamp (khetm.png). */
+    includeStamp: { type: Boolean, default: false },
+    /** Request PDF: shop stamp (khetm2.png). */
+    includeShopStamp: { type: Boolean, default: false },
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   },
   { timestamps: true }

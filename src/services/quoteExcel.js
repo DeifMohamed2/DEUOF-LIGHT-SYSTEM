@@ -26,8 +26,14 @@ async function quoteToWorkbook(quote) {
 
   row += 1;
   ws.getCell(`A${row}`).value =
-    quote.type === 'request' ? 'طلب تسعير' : 'عرض سعر من المخزون';
+    quote.type === 'request' ? 'طلب تسليم بضاعه' : 'عرض سعر من المخزون';
+  ws.getCell(`A${row}`).alignment = { horizontal: 'right' };
   row += 1;
+  if (quote.type === 'request') {
+    ws.getCell(`A${row}`).value = 'Goods delivery request';
+    ws.getCell(`A${row}`).alignment = { horizontal: 'left' };
+    row += 1;
+  }
   ws.getCell(`A${row}`).value = `العميل: ${quote.customerName}`;
   row += 1;
   if (quote.customerPhone) {
